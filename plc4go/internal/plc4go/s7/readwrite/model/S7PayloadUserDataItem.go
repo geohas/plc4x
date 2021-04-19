@@ -16,12 +16,13 @@
 // specific language governing permissions and limitations
 // under the License.
 //
+
 package model
 
 import (
 	"encoding/xml"
-	"errors"
 	"github.com/apache/plc4x/plc4go/internal/plc4go/spi/utils"
+	"github.com/pkg/errors"
 	"io"
 	"reflect"
 	"strings"
@@ -45,6 +46,7 @@ type IS7PayloadUserDataItem interface {
 	LengthInBits() uint16
 	Serialize(io utils.WriteBuffer) error
 	xml.Marshaler
+	xml.Unmarshaler
 }
 
 type IS7PayloadUserDataItemParent interface {
@@ -57,6 +59,7 @@ type IS7PayloadUserDataItemChild interface {
 	InitializeParent(parent *S7PayloadUserDataItem, returnCode DataTransportErrorCode, transportSize DataTransportSize, szlId *SzlId, szlIndex uint16)
 	GetTypeName() string
 	IS7PayloadUserDataItem
+	utils.AsciiBoxer
 }
 
 func NewS7PayloadUserDataItem(returnCode DataTransportErrorCode, transportSize DataTransportSize, szlId *SzlId, szlIndex uint16) *S7PayloadUserDataItem {
@@ -81,6 +84,14 @@ func (m *S7PayloadUserDataItem) GetTypeName() string {
 }
 
 func (m *S7PayloadUserDataItem) LengthInBits() uint16 {
+	return m.LengthInBitsConditional(false)
+}
+
+func (m *S7PayloadUserDataItem) LengthInBitsConditional(lastItem bool) uint16 {
+	return m.Child.LengthInBits()
+}
+
+func (m *S7PayloadUserDataItem) ParentLengthInBits() uint16 {
 	lengthInBits := uint16(0)
 
 	// Enum Field (returnCode)
@@ -98,9 +109,6 @@ func (m *S7PayloadUserDataItem) LengthInBits() uint16 {
 	// Simple field (szlIndex)
 	lengthInBits += 16
 
-	// Length of sub-type elements will be added by sub-type...
-	lengthInBits += m.Child.LengthInBits()
-
 	return lengthInBits
 }
 
@@ -108,49 +116,53 @@ func (m *S7PayloadUserDataItem) LengthInBytes() uint16 {
 	return m.LengthInBits() / 8
 }
 
-func S7PayloadUserDataItemParse(io *utils.ReadBuffer, cpuFunctionType uint8) (*S7PayloadUserDataItem, error) {
+func S7PayloadUserDataItemParse(io utils.ReadBuffer, cpuFunctionType uint8) (*S7PayloadUserDataItem, error) {
 
 	// Enum field (returnCode)
 	returnCode, _returnCodeErr := DataTransportErrorCodeParse(io)
 	if _returnCodeErr != nil {
-		return nil, errors.New("Error parsing 'returnCode' field " + _returnCodeErr.Error())
+		return nil, errors.Wrap(_returnCodeErr, "Error parsing 'returnCode' field")
 	}
 
 	// Enum field (transportSize)
 	transportSize, _transportSizeErr := DataTransportSizeParse(io)
 	if _transportSizeErr != nil {
-		return nil, errors.New("Error parsing 'transportSize' field " + _transportSizeErr.Error())
+		return nil, errors.Wrap(_transportSizeErr, "Error parsing 'transportSize' field")
 	}
 
 	// Implicit Field (dataLength) (Used for parsing, but it's value is not stored as it's implicitly given by the objects content)
-	_, _dataLengthErr := io.ReadUint16(16)
+	dataLength, _dataLengthErr := io.ReadUint16(16)
+	_ = dataLength
 	if _dataLengthErr != nil {
-		return nil, errors.New("Error parsing 'dataLength' field " + _dataLengthErr.Error())
+		return nil, errors.Wrap(_dataLengthErr, "Error parsing 'dataLength' field")
 	}
 
 	// Simple Field (szlId)
 	szlId, _szlIdErr := SzlIdParse(io)
 	if _szlIdErr != nil {
-		return nil, errors.New("Error parsing 'szlId' field " + _szlIdErr.Error())
+		return nil, errors.Wrap(_szlIdErr, "Error parsing 'szlId' field")
 	}
 
 	// Simple Field (szlIndex)
 	szlIndex, _szlIndexErr := io.ReadUint16(16)
 	if _szlIndexErr != nil {
-		return nil, errors.New("Error parsing 'szlIndex' field " + _szlIndexErr.Error())
+		return nil, errors.Wrap(_szlIndexErr, "Error parsing 'szlIndex' field")
 	}
 
 	// Switch Field (Depending on the discriminator values, passes the instantiation to a sub-type)
 	var _parent *S7PayloadUserDataItem
 	var typeSwitchError error
 	switch {
-	case cpuFunctionType == 0x04:
+	case cpuFunctionType == 0x04: // S7PayloadUserDataItemCpuFunctionReadSzlRequest
 		_parent, typeSwitchError = S7PayloadUserDataItemCpuFunctionReadSzlRequestParse(io)
-	case cpuFunctionType == 0x08:
+	case cpuFunctionType == 0x08: // S7PayloadUserDataItemCpuFunctionReadSzlResponse
 		_parent, typeSwitchError = S7PayloadUserDataItemCpuFunctionReadSzlResponseParse(io)
+	default:
+		// TODO: return actual type
+		typeSwitchError = errors.New("Unmapped type")
 	}
 	if typeSwitchError != nil {
-		return nil, errors.New("Error parsing sub-type for type-switch. " + typeSwitchError.Error())
+		return nil, errors.Wrap(typeSwitchError, "Error parsing sub-type for type-switch.")
 	}
 
 	// Finish initializing
@@ -163,63 +175,78 @@ func (m *S7PayloadUserDataItem) Serialize(io utils.WriteBuffer) error {
 }
 
 func (m *S7PayloadUserDataItem) SerializeParent(io utils.WriteBuffer, child IS7PayloadUserDataItem, serializeChildFunction func() error) error {
+	io.PushContext("S7PayloadUserDataItem")
 
 	// Enum field (returnCode)
 	returnCode := CastDataTransportErrorCode(m.ReturnCode)
 	_returnCodeErr := returnCode.Serialize(io)
 	if _returnCodeErr != nil {
-		return errors.New("Error serializing 'returnCode' field " + _returnCodeErr.Error())
+		return errors.Wrap(_returnCodeErr, "Error serializing 'returnCode' field")
 	}
 
 	// Enum field (transportSize)
 	transportSize := CastDataTransportSize(m.TransportSize)
 	_transportSizeErr := transportSize.Serialize(io)
 	if _transportSizeErr != nil {
-		return errors.New("Error serializing 'transportSize' field " + _transportSizeErr.Error())
+		return errors.Wrap(_transportSizeErr, "Error serializing 'transportSize' field")
 	}
 
 	// Implicit Field (dataLength) (Used for parsing, but it's value is not stored as it's implicitly given by the objects content)
 	dataLength := uint16(uint16(uint16(m.LengthInBytes())) - uint16(uint16(4)))
-	_dataLengthErr := io.WriteUint16(16, (dataLength))
+	_dataLengthErr := io.WriteUint16("dataLength", 16, (dataLength))
 	if _dataLengthErr != nil {
-		return errors.New("Error serializing 'dataLength' field " + _dataLengthErr.Error())
+		return errors.Wrap(_dataLengthErr, "Error serializing 'dataLength' field")
 	}
 
 	// Simple Field (szlId)
 	_szlIdErr := m.SzlId.Serialize(io)
 	if _szlIdErr != nil {
-		return errors.New("Error serializing 'szlId' field " + _szlIdErr.Error())
+		return errors.Wrap(_szlIdErr, "Error serializing 'szlId' field")
 	}
 
 	// Simple Field (szlIndex)
 	szlIndex := uint16(m.SzlIndex)
-	_szlIndexErr := io.WriteUint16(16, (szlIndex))
+	_szlIndexErr := io.WriteUint16("szlIndex", 16, (szlIndex))
 	if _szlIndexErr != nil {
-		return errors.New("Error serializing 'szlIndex' field " + _szlIndexErr.Error())
+		return errors.Wrap(_szlIndexErr, "Error serializing 'szlIndex' field")
 	}
 
 	// Switch field (Depending on the discriminator values, passes the serialization to a sub-type)
 	_typeSwitchErr := serializeChildFunction()
 	if _typeSwitchErr != nil {
-		return errors.New("Error serializing sub-type field " + _typeSwitchErr.Error())
+		return errors.Wrap(_typeSwitchErr, "Error serializing sub-type field")
 	}
 
+	io.PopContext("S7PayloadUserDataItem")
 	return nil
 }
 
 func (m *S7PayloadUserDataItem) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
 	var token xml.Token
 	var err error
+	foundContent := false
+	if start.Attr != nil && len(start.Attr) > 0 {
+		switch start.Attr[0].Value {
+		// S7PayloadUserDataItemCpuFunctionReadSzlRequest needs special treatment as it has no fields
+		case "org.apache.plc4x.java.s7.readwrite.S7PayloadUserDataItemCpuFunctionReadSzlRequest":
+			if m.Child == nil {
+				m.Child = &S7PayloadUserDataItemCpuFunctionReadSzlRequest{
+					Parent: m,
+				}
+			}
+		}
+	}
 	for {
 		token, err = d.Token()
 		if err != nil {
-			if err == io.EOF {
+			if err == io.EOF && foundContent {
 				return nil
 			}
 			return err
 		}
 		switch token.(type) {
 		case xml.StartElement:
+			foundContent = true
 			tok := token.(xml.StartElement)
 			switch tok.Name.Local {
 			case "returnCode":
@@ -235,11 +262,11 @@ func (m *S7PayloadUserDataItem) UnmarshalXML(d *xml.Decoder, start xml.StartElem
 				}
 				m.TransportSize = data
 			case "szlId":
-				var data *SzlId
-				if err := d.DecodeElement(data, &tok); err != nil {
+				var data SzlId
+				if err := d.DecodeElement(&data, &tok); err != nil {
 					return err
 				}
-				m.SzlId = data
+				m.SzlId = &data
 			case "szlIndex":
 				var data uint16
 				if err := d.DecodeElement(&data, &tok); err != nil {
@@ -247,7 +274,15 @@ func (m *S7PayloadUserDataItem) UnmarshalXML(d *xml.Decoder, start xml.StartElem
 				}
 				m.SzlIndex = data
 			default:
-				switch start.Attr[0].Value {
+				attr := start.Attr
+				if attr == nil || len(attr) <= 0 {
+					// TODO: workaround for bug with nested lists
+					attr = tok.Attr
+				}
+				if attr == nil || len(attr) <= 0 {
+					panic("Couldn't determine class type for childs of S7PayloadUserDataItem")
+				}
+				switch attr[0].Value {
 				case "org.apache.plc4x.java.s7.readwrite.S7PayloadUserDataItemCpuFunctionReadSzlRequest":
 					var dt *S7PayloadUserDataItemCpuFunctionReadSzlRequest
 					if m.Child != nil {
@@ -300,7 +335,7 @@ func (m *S7PayloadUserDataItem) MarshalXML(e *xml.Encoder, start xml.StartElemen
 	}
 	marshaller, ok := m.Child.(xml.Marshaler)
 	if !ok {
-		return errors.New("child is not castable to Marshaler")
+		return errors.Errorf("child is not castable to Marshaler. Actual type %T", m.Child)
 	}
 	if err := marshaller.MarshalXML(e, start); err != nil {
 		return err
@@ -309,4 +344,38 @@ func (m *S7PayloadUserDataItem) MarshalXML(e *xml.Encoder, start xml.StartElemen
 		return err
 	}
 	return nil
+}
+
+func (m S7PayloadUserDataItem) String() string {
+	return string(m.Box("", 120))
+}
+
+func (m *S7PayloadUserDataItem) Box(name string, width int) utils.AsciiBox {
+	return m.Child.Box(name, width)
+}
+
+func (m *S7PayloadUserDataItem) BoxParent(name string, width int, childBoxer func() []utils.AsciiBox) utils.AsciiBox {
+	boxName := "S7PayloadUserDataItem"
+	if name != "" {
+		boxName += "/" + name
+	}
+	boxes := make([]utils.AsciiBox, 0)
+	// Enum field (returnCode)
+	returnCode := CastDataTransportErrorCode(m.ReturnCode)
+	boxes = append(boxes, returnCode.Box("returnCode", -1))
+	// Enum field (transportSize)
+	transportSize := CastDataTransportSize(m.TransportSize)
+	boxes = append(boxes, transportSize.Box("transportSize", -1))
+	// Implicit Field (dataLength)
+	dataLength := uint16(uint16(uint16(m.LengthInBytes())) - uint16(uint16(4)))
+	// uint16 can be boxed as anything with the least amount of space
+	boxes = append(boxes, utils.BoxAnything("DataLength", dataLength, -1))
+	// Complex field (case complex)
+	boxes = append(boxes, m.SzlId.Box("szlId", width-2))
+	// Simple field (case simple)
+	// uint16 can be boxed as anything with the least amount of space
+	boxes = append(boxes, utils.BoxAnything("SzlIndex", m.SzlIndex, -1))
+	// Switch field (Depending on the discriminator values, passes the boxing to a sub-type)
+	boxes = append(boxes, childBoxer()...)
+	return utils.BoxBox(boxName, utils.AlignBoxes(boxes, width-2), 0)
 }

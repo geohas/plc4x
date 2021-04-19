@@ -16,12 +16,13 @@
 // specific language governing permissions and limitations
 // under the License.
 //
+
 package model
 
 import (
 	"encoding/xml"
-	"errors"
 	"github.com/apache/plc4x/plc4go/internal/plc4go/spi/utils"
+	"github.com/pkg/errors"
 	"io"
 )
 
@@ -39,6 +40,7 @@ type IKnxNetIpRouting interface {
 	LengthInBits() uint16
 	Serialize(io utils.WriteBuffer) error
 	xml.Marshaler
+	xml.Unmarshaler
 }
 
 ///////////////////////////////////////////////////////////
@@ -84,7 +86,11 @@ func (m *KnxNetIpRouting) GetTypeName() string {
 }
 
 func (m *KnxNetIpRouting) LengthInBits() uint16 {
-	lengthInBits := uint16(0)
+	return m.LengthInBitsConditional(false)
+}
+
+func (m *KnxNetIpRouting) LengthInBitsConditional(lastItem bool) uint16 {
+	lengthInBits := uint16(m.Parent.ParentLengthInBits())
 
 	// Simple field (version)
 	lengthInBits += 8
@@ -96,12 +102,12 @@ func (m *KnxNetIpRouting) LengthInBytes() uint16 {
 	return m.LengthInBits() / 8
 }
 
-func KnxNetIpRoutingParse(io *utils.ReadBuffer) (*ServiceId, error) {
+func KnxNetIpRoutingParse(io utils.ReadBuffer) (*ServiceId, error) {
 
 	// Simple Field (version)
 	version, _versionErr := io.ReadUint8(8)
 	if _versionErr != nil {
-		return nil, errors.New("Error parsing 'version' field " + _versionErr.Error())
+		return nil, errors.Wrap(_versionErr, "Error parsing 'version' field")
 	}
 
 	// Create a partially initialized instance
@@ -115,14 +121,16 @@ func KnxNetIpRoutingParse(io *utils.ReadBuffer) (*ServiceId, error) {
 
 func (m *KnxNetIpRouting) Serialize(io utils.WriteBuffer) error {
 	ser := func() error {
+		io.PushContext("KnxNetIpRouting")
 
 		// Simple Field (version)
 		version := uint8(m.Version)
-		_versionErr := io.WriteUint8(8, (version))
+		_versionErr := io.WriteUint8("version", 8, (version))
 		if _versionErr != nil {
-			return errors.New("Error serializing 'version' field " + _versionErr.Error())
+			return errors.Wrap(_versionErr, "Error serializing 'version' field")
 		}
 
+		io.PopContext("KnxNetIpRouting")
 		return nil
 	}
 	return m.Parent.SerializeParent(io, m, ser)
@@ -131,10 +139,12 @@ func (m *KnxNetIpRouting) Serialize(io utils.WriteBuffer) error {
 func (m *KnxNetIpRouting) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
 	var token xml.Token
 	var err error
+	foundContent := false
 	token = start
 	for {
 		switch token.(type) {
 		case xml.StartElement:
+			foundContent = true
 			tok := token.(xml.StartElement)
 			switch tok.Name.Local {
 			case "version":
@@ -147,7 +157,7 @@ func (m *KnxNetIpRouting) UnmarshalXML(d *xml.Decoder, start xml.StartElement) e
 		}
 		token, err = d.Token()
 		if err != nil {
-			if err == io.EOF {
+			if err == io.EOF && foundContent {
 				return nil
 			}
 			return err
@@ -160,4 +170,23 @@ func (m *KnxNetIpRouting) MarshalXML(e *xml.Encoder, start xml.StartElement) err
 		return err
 	}
 	return nil
+}
+
+func (m KnxNetIpRouting) String() string {
+	return string(m.Box("", 120))
+}
+
+func (m KnxNetIpRouting) Box(name string, width int) utils.AsciiBox {
+	boxName := "KnxNetIpRouting"
+	if name != "" {
+		boxName += "/" + name
+	}
+	childBoxer := func() []utils.AsciiBox {
+		boxes := make([]utils.AsciiBox, 0)
+		// Simple field (case simple)
+		// uint8 can be boxed as anything with the least amount of space
+		boxes = append(boxes, utils.BoxAnything("Version", m.Version, -1))
+		return boxes
+	}
+	return m.Parent.BoxParent(boxName, width, childBoxer)
 }

@@ -16,12 +16,13 @@
 // specific language governing permissions and limitations
 // under the License.
 //
+
 package model
 
 import (
 	"encoding/xml"
-	"errors"
 	"github.com/apache/plc4x/plc4go/internal/plc4go/spi/utils"
+	"github.com/pkg/errors"
 	"io"
 )
 
@@ -41,6 +42,7 @@ type ISearchResponse interface {
 	LengthInBits() uint16
 	Serialize(io utils.WriteBuffer) error
 	xml.Marshaler
+	xml.Unmarshaler
 }
 
 ///////////////////////////////////////////////////////////
@@ -88,7 +90,11 @@ func (m *SearchResponse) GetTypeName() string {
 }
 
 func (m *SearchResponse) LengthInBits() uint16 {
-	lengthInBits := uint16(0)
+	return m.LengthInBitsConditional(false)
+}
+
+func (m *SearchResponse) LengthInBitsConditional(lastItem bool) uint16 {
+	lengthInBits := uint16(m.Parent.ParentLengthInBits())
 
 	// Simple field (hpaiControlEndpoint)
 	lengthInBits += m.HpaiControlEndpoint.LengthInBits()
@@ -106,24 +112,24 @@ func (m *SearchResponse) LengthInBytes() uint16 {
 	return m.LengthInBits() / 8
 }
 
-func SearchResponseParse(io *utils.ReadBuffer) (*KnxNetIpMessage, error) {
+func SearchResponseParse(io utils.ReadBuffer) (*KnxNetIpMessage, error) {
 
 	// Simple Field (hpaiControlEndpoint)
 	hpaiControlEndpoint, _hpaiControlEndpointErr := HPAIControlEndpointParse(io)
 	if _hpaiControlEndpointErr != nil {
-		return nil, errors.New("Error parsing 'hpaiControlEndpoint' field " + _hpaiControlEndpointErr.Error())
+		return nil, errors.Wrap(_hpaiControlEndpointErr, "Error parsing 'hpaiControlEndpoint' field")
 	}
 
 	// Simple Field (dibDeviceInfo)
 	dibDeviceInfo, _dibDeviceInfoErr := DIBDeviceInfoParse(io)
 	if _dibDeviceInfoErr != nil {
-		return nil, errors.New("Error parsing 'dibDeviceInfo' field " + _dibDeviceInfoErr.Error())
+		return nil, errors.Wrap(_dibDeviceInfoErr, "Error parsing 'dibDeviceInfo' field")
 	}
 
 	// Simple Field (dibSuppSvcFamilies)
 	dibSuppSvcFamilies, _dibSuppSvcFamiliesErr := DIBSuppSvcFamiliesParse(io)
 	if _dibSuppSvcFamiliesErr != nil {
-		return nil, errors.New("Error parsing 'dibSuppSvcFamilies' field " + _dibSuppSvcFamiliesErr.Error())
+		return nil, errors.Wrap(_dibSuppSvcFamiliesErr, "Error parsing 'dibSuppSvcFamilies' field")
 	}
 
 	// Create a partially initialized instance
@@ -139,25 +145,27 @@ func SearchResponseParse(io *utils.ReadBuffer) (*KnxNetIpMessage, error) {
 
 func (m *SearchResponse) Serialize(io utils.WriteBuffer) error {
 	ser := func() error {
+		io.PushContext("SearchResponse")
 
 		// Simple Field (hpaiControlEndpoint)
 		_hpaiControlEndpointErr := m.HpaiControlEndpoint.Serialize(io)
 		if _hpaiControlEndpointErr != nil {
-			return errors.New("Error serializing 'hpaiControlEndpoint' field " + _hpaiControlEndpointErr.Error())
+			return errors.Wrap(_hpaiControlEndpointErr, "Error serializing 'hpaiControlEndpoint' field")
 		}
 
 		// Simple Field (dibDeviceInfo)
 		_dibDeviceInfoErr := m.DibDeviceInfo.Serialize(io)
 		if _dibDeviceInfoErr != nil {
-			return errors.New("Error serializing 'dibDeviceInfo' field " + _dibDeviceInfoErr.Error())
+			return errors.Wrap(_dibDeviceInfoErr, "Error serializing 'dibDeviceInfo' field")
 		}
 
 		// Simple Field (dibSuppSvcFamilies)
 		_dibSuppSvcFamiliesErr := m.DibSuppSvcFamilies.Serialize(io)
 		if _dibSuppSvcFamiliesErr != nil {
-			return errors.New("Error serializing 'dibSuppSvcFamilies' field " + _dibSuppSvcFamiliesErr.Error())
+			return errors.Wrap(_dibSuppSvcFamiliesErr, "Error serializing 'dibSuppSvcFamilies' field")
 		}
 
+		io.PopContext("SearchResponse")
 		return nil
 	}
 	return m.Parent.SerializeParent(io, m, ser)
@@ -166,35 +174,37 @@ func (m *SearchResponse) Serialize(io utils.WriteBuffer) error {
 func (m *SearchResponse) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
 	var token xml.Token
 	var err error
+	foundContent := false
 	token = start
 	for {
 		switch token.(type) {
 		case xml.StartElement:
+			foundContent = true
 			tok := token.(xml.StartElement)
 			switch tok.Name.Local {
 			case "hpaiControlEndpoint":
-				var data *HPAIControlEndpoint
-				if err := d.DecodeElement(data, &tok); err != nil {
+				var data HPAIControlEndpoint
+				if err := d.DecodeElement(&data, &tok); err != nil {
 					return err
 				}
-				m.HpaiControlEndpoint = data
+				m.HpaiControlEndpoint = &data
 			case "dibDeviceInfo":
-				var data *DIBDeviceInfo
-				if err := d.DecodeElement(data, &tok); err != nil {
+				var data DIBDeviceInfo
+				if err := d.DecodeElement(&data, &tok); err != nil {
 					return err
 				}
-				m.DibDeviceInfo = data
+				m.DibDeviceInfo = &data
 			case "dibSuppSvcFamilies":
-				var data *DIBSuppSvcFamilies
-				if err := d.DecodeElement(data, &tok); err != nil {
+				var data DIBSuppSvcFamilies
+				if err := d.DecodeElement(&data, &tok); err != nil {
 					return err
 				}
-				m.DibSuppSvcFamilies = data
+				m.DibSuppSvcFamilies = &data
 			}
 		}
 		token, err = d.Token()
 		if err != nil {
-			if err == io.EOF {
+			if err == io.EOF && foundContent {
 				return nil
 			}
 			return err
@@ -213,4 +223,26 @@ func (m *SearchResponse) MarshalXML(e *xml.Encoder, start xml.StartElement) erro
 		return err
 	}
 	return nil
+}
+
+func (m SearchResponse) String() string {
+	return string(m.Box("", 120))
+}
+
+func (m SearchResponse) Box(name string, width int) utils.AsciiBox {
+	boxName := "SearchResponse"
+	if name != "" {
+		boxName += "/" + name
+	}
+	childBoxer := func() []utils.AsciiBox {
+		boxes := make([]utils.AsciiBox, 0)
+		// Complex field (case complex)
+		boxes = append(boxes, m.HpaiControlEndpoint.Box("hpaiControlEndpoint", width-2))
+		// Complex field (case complex)
+		boxes = append(boxes, m.DibDeviceInfo.Box("dibDeviceInfo", width-2))
+		// Complex field (case complex)
+		boxes = append(boxes, m.DibSuppSvcFamilies.Box("dibSuppSvcFamilies", width-2))
+		return boxes
+	}
+	return m.Parent.BoxParent(boxName, width, childBoxer)
 }

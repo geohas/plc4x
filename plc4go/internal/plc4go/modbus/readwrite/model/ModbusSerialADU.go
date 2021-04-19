@@ -16,12 +16,13 @@
 // specific language governing permissions and limitations
 // under the License.
 //
+
 package model
 
 import (
 	"encoding/xml"
-	"errors"
 	"github.com/apache/plc4x/plc4go/internal/plc4go/spi/utils"
+	"github.com/pkg/errors"
 	"github.com/rs/zerolog/log"
 	"io"
 )
@@ -42,6 +43,7 @@ type IModbusSerialADU interface {
 	LengthInBits() uint16
 	Serialize(io utils.WriteBuffer) error
 	xml.Marshaler
+	xml.Unmarshaler
 }
 
 func NewModbusSerialADU(transactionId uint16, length uint16, address uint8, pdu *ModbusPDU) *ModbusSerialADU {
@@ -66,6 +68,10 @@ func (m *ModbusSerialADU) GetTypeName() string {
 }
 
 func (m *ModbusSerialADU) LengthInBits() uint16 {
+	return m.LengthInBitsConditional(false)
+}
+
+func (m *ModbusSerialADU) LengthInBitsConditional(lastItem bool) uint16 {
 	lengthInBits := uint16(0)
 
 	// Simple field (transactionId)
@@ -90,19 +96,19 @@ func (m *ModbusSerialADU) LengthInBytes() uint16 {
 	return m.LengthInBits() / 8
 }
 
-func ModbusSerialADUParse(io *utils.ReadBuffer, response bool) (*ModbusSerialADU, error) {
+func ModbusSerialADUParse(io utils.ReadBuffer, response bool) (*ModbusSerialADU, error) {
 
 	// Simple Field (transactionId)
 	transactionId, _transactionIdErr := io.ReadUint16(16)
 	if _transactionIdErr != nil {
-		return nil, errors.New("Error parsing 'transactionId' field " + _transactionIdErr.Error())
+		return nil, errors.Wrap(_transactionIdErr, "Error parsing 'transactionId' field")
 	}
 
 	// Reserved Field (Compartmentalized so the "reserved" variable can't leak)
 	{
 		reserved, _err := io.ReadUint16(16)
 		if _err != nil {
-			return nil, errors.New("Error parsing 'reserved' field " + _err.Error())
+			return nil, errors.Wrap(_err, "Error parsing 'reserved' field")
 		}
 		if reserved != uint16(0x0000) {
 			log.Info().Fields(map[string]interface{}{
@@ -115,19 +121,19 @@ func ModbusSerialADUParse(io *utils.ReadBuffer, response bool) (*ModbusSerialADU
 	// Simple Field (length)
 	length, _lengthErr := io.ReadUint16(16)
 	if _lengthErr != nil {
-		return nil, errors.New("Error parsing 'length' field " + _lengthErr.Error())
+		return nil, errors.Wrap(_lengthErr, "Error parsing 'length' field")
 	}
 
 	// Simple Field (address)
 	address, _addressErr := io.ReadUint8(8)
 	if _addressErr != nil {
-		return nil, errors.New("Error parsing 'address' field " + _addressErr.Error())
+		return nil, errors.Wrap(_addressErr, "Error parsing 'address' field")
 	}
 
 	// Simple Field (pdu)
 	pdu, _pduErr := ModbusPDUParse(io, response)
 	if _pduErr != nil {
-		return nil, errors.New("Error parsing 'pdu' field " + _pduErr.Error())
+		return nil, errors.Wrap(_pduErr, "Error parsing 'pdu' field")
 	}
 
 	// Create the instance
@@ -135,58 +141,62 @@ func ModbusSerialADUParse(io *utils.ReadBuffer, response bool) (*ModbusSerialADU
 }
 
 func (m *ModbusSerialADU) Serialize(io utils.WriteBuffer) error {
+	io.PushContext("ModbusSerialADU")
 
 	// Simple Field (transactionId)
 	transactionId := uint16(m.TransactionId)
-	_transactionIdErr := io.WriteUint16(16, (transactionId))
+	_transactionIdErr := io.WriteUint16("transactionId", 16, (transactionId))
 	if _transactionIdErr != nil {
-		return errors.New("Error serializing 'transactionId' field " + _transactionIdErr.Error())
+		return errors.Wrap(_transactionIdErr, "Error serializing 'transactionId' field")
 	}
 
 	// Reserved Field (reserved)
 	{
-		_err := io.WriteUint16(16, uint16(0x0000))
+		_err := io.WriteUint16("reserved", 16, uint16(0x0000))
 		if _err != nil {
-			return errors.New("Error serializing 'reserved' field " + _err.Error())
+			return errors.Wrap(_err, "Error serializing 'reserved' field")
 		}
 	}
 
 	// Simple Field (length)
 	length := uint16(m.Length)
-	_lengthErr := io.WriteUint16(16, (length))
+	_lengthErr := io.WriteUint16("length", 16, (length))
 	if _lengthErr != nil {
-		return errors.New("Error serializing 'length' field " + _lengthErr.Error())
+		return errors.Wrap(_lengthErr, "Error serializing 'length' field")
 	}
 
 	// Simple Field (address)
 	address := uint8(m.Address)
-	_addressErr := io.WriteUint8(8, (address))
+	_addressErr := io.WriteUint8("address", 8, (address))
 	if _addressErr != nil {
-		return errors.New("Error serializing 'address' field " + _addressErr.Error())
+		return errors.Wrap(_addressErr, "Error serializing 'address' field")
 	}
 
 	// Simple Field (pdu)
 	_pduErr := m.Pdu.Serialize(io)
 	if _pduErr != nil {
-		return errors.New("Error serializing 'pdu' field " + _pduErr.Error())
+		return errors.Wrap(_pduErr, "Error serializing 'pdu' field")
 	}
 
+	io.PopContext("ModbusSerialADU")
 	return nil
 }
 
 func (m *ModbusSerialADU) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
 	var token xml.Token
 	var err error
+	foundContent := false
 	for {
 		token, err = d.Token()
 		if err != nil {
-			if err == io.EOF {
+			if err == io.EOF && foundContent {
 				return nil
 			}
 			return err
 		}
 		switch token.(type) {
 		case xml.StartElement:
+			foundContent = true
 			tok := token.(xml.StartElement)
 			switch tok.Name.Local {
 			case "transactionId":
@@ -210,6 +220,9 @@ func (m *ModbusSerialADU) UnmarshalXML(d *xml.Decoder, start xml.StartElement) e
 			case "pdu":
 				var dt *ModbusPDU
 				if err := d.DecodeElement(&dt, &tok); err != nil {
+					if err == io.EOF {
+						continue
+					}
 					return err
 				}
 				m.Pdu = dt
@@ -241,4 +254,31 @@ func (m *ModbusSerialADU) MarshalXML(e *xml.Encoder, start xml.StartElement) err
 		return err
 	}
 	return nil
+}
+
+func (m ModbusSerialADU) String() string {
+	return string(m.Box("", 120))
+}
+
+func (m ModbusSerialADU) Box(name string, width int) utils.AsciiBox {
+	boxName := "ModbusSerialADU"
+	if name != "" {
+		boxName += "/" + name
+	}
+	boxes := make([]utils.AsciiBox, 0)
+	// Simple field (case simple)
+	// uint16 can be boxed as anything with the least amount of space
+	boxes = append(boxes, utils.BoxAnything("TransactionId", m.TransactionId, -1))
+	// Reserved Field (reserved)
+	// reserved field can be boxed as anything with the least amount of space
+	boxes = append(boxes, utils.BoxAnything("reserved", uint16(0x0000), -1))
+	// Simple field (case simple)
+	// uint16 can be boxed as anything with the least amount of space
+	boxes = append(boxes, utils.BoxAnything("Length", m.Length, -1))
+	// Simple field (case simple)
+	// uint8 can be boxed as anything with the least amount of space
+	boxes = append(boxes, utils.BoxAnything("Address", m.Address, -1))
+	// Complex field (case complex)
+	boxes = append(boxes, m.Pdu.Box("pdu", width-2))
+	return utils.BoxBox(boxName, utils.AlignBoxes(boxes, width-2), 0)
 }

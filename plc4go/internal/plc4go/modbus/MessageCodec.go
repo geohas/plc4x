@@ -16,173 +16,89 @@
 // specific language governing permissions and limitations
 // under the License.
 //
+
 package modbus
 
 import (
-	"errors"
-	"fmt"
 	"github.com/apache/plc4x/plc4go/internal/plc4go/modbus/readwrite/model"
 	"github.com/apache/plc4x/plc4go/internal/plc4go/spi"
+	"github.com/apache/plc4x/plc4go/internal/plc4go/spi/default"
 	"github.com/apache/plc4x/plc4go/internal/plc4go/spi/transports"
 	"github.com/apache/plc4x/plc4go/internal/plc4go/spi/utils"
-	"time"
+	"github.com/pkg/errors"
+	"github.com/rs/zerolog/log"
 )
 
-type Expectation struct {
-	expiration     time.Time
-	acceptsMessage spi.AcceptsMessage
-	handleMessage  spi.HandleMessage
-	handleError    spi.HandleError
-}
-
 type MessageCodec struct {
-	expectationCounter            int32
-	transportInstance             transports.TransportInstance
-	defaultIncomingMessageChannel chan interface{}
-	expectations                  []Expectation
+	_default.DefaultCodec
+	expectationCounter int32
 }
 
-func NewMessageCodec(transportInstance transports.TransportInstance, defaultIncomingMessageChannel chan interface{}) *MessageCodec {
+func NewMessageCodec(transportInstance transports.TransportInstance) *MessageCodec {
 	codec := &MessageCodec{
-		expectationCounter:            1,
-		transportInstance:             transportInstance,
-		defaultIncomingMessageChannel: defaultIncomingMessageChannel,
-		expectations:                  []Expectation{},
+		expectationCounter: 1,
 	}
-	// Start a worker that handles processing of responses
-	go work(codec)
+	codec.DefaultCodec = _default.NewDefaultCodec(codec, transportInstance)
 	return codec
 }
 
-func (m *MessageCodec) Connect() error {
-	return m.transportInstance.Connect()
-}
-
-func (m *MessageCodec) Disconnect() error {
-	return m.transportInstance.Close()
+func (m *MessageCodec) GetCodec() spi.MessageCodec {
+	return m
 }
 
 func (m *MessageCodec) Send(message interface{}) error {
+	log.Trace().Msg("Sending message")
 	// Cast the message to the correct type of struct
-	adu := model.CastModbusTcpADU(message)
+	tcpAdu := model.CastModbusTcpADU(message)
 	// Serialize the request
 	wb := utils.NewWriteBuffer()
-	err := adu.Serialize(*wb)
+	err := tcpAdu.Serialize(wb)
 	if err != nil {
-		return errors.New("error serializing request " + err.Error())
+		return errors.Wrap(err, "error serializing request")
 	}
 
 	// Send it to the PLC
-	err = m.transportInstance.Write(wb.GetBytes())
+	err = m.GetTransportInstance().Write(wb.GetBytes())
 	if err != nil {
-		return errors.New("error sending request " + err.Error())
+		return errors.Wrap(err, "error sending request")
 	}
 	return nil
 }
 
-func (m *MessageCodec) Expect(acceptsMessage spi.AcceptsMessage, handleMessage spi.HandleMessage, handleError spi.HandleError, ttl time.Duration) error {
-	expectation := Expectation{
-		expiration:     time.Now().Add(ttl),
-		acceptsMessage: acceptsMessage,
-		handleMessage:  handleMessage,
-		handleError:    handleError,
-	}
-	m.expectations = append(m.expectations, expectation)
-	return nil
-}
-
-func (m *MessageCodec) SendRequest(message interface{}, acceptsMessage spi.AcceptsMessage, handleMessage spi.HandleMessage, handleError spi.HandleError, ttl time.Duration) error {
-	// Send the actual message
-	err := m.Send(message)
-	if err != nil {
-		return err
-	}
-	return m.Expect(acceptsMessage, handleMessage, handleError, ttl)
-}
-
-func (m *MessageCodec) GetDefaultIncomingMessageChannel() chan interface{} {
-	return m.defaultIncomingMessageChannel
-}
-
-func (m *MessageCodec) receive() (interface{}, error) {
+func (m *MessageCodec) Receive() (interface{}, error) {
+	log.Trace().Msg("receiving")
 	// We need at least 6 bytes in order to know how big the packet is in total
-	if num, err := m.transportInstance.GetNumReadableBytes(); (err == nil) && (num >= 6) {
-		data, err := m.transportInstance.PeekReadableBytes(6)
+	if num, err := m.GetTransportInstance().GetNumReadableBytes(); (err == nil) && (num >= 6) {
+		log.Debug().Msgf("we got %d readable bytes", num)
+		data, err := m.GetTransportInstance().PeekReadableBytes(6)
 		if err != nil {
+			log.Warn().Err(err).Msg("error peeking")
 			// TODO: Possibly clean up ...
 			return nil, nil
 		}
 		// Get the size of the entire packet
 		packetSize := (uint32(data[4]) << 8) + uint32(data[5]) + 6
-		if num >= packetSize {
-			data, err = m.transportInstance.Read(packetSize)
-			if err != nil {
-				// TODO: Possibly clean up ...
-				return nil, nil
-			}
-			rb := utils.NewReadBuffer(data)
-			adu, err := model.ModbusTcpADUParse(rb, true)
-			if err != nil {
-				// TODO: Possibly clean up ...
-				return nil, nil
-			}
-			return adu, nil
+		if num < packetSize {
+			log.Debug().Msgf("Not enough bytes. Got: %d Need: %d\n", num, packetSize)
+			return nil, nil
 		}
+		data, err = m.GetTransportInstance().Read(packetSize)
+		if err != nil {
+			// TODO: Possibly clean up ...
+			return nil, nil
+		}
+		rb := utils.NewReadBuffer(data)
+		tcpAdu, err := model.ModbusTcpADUParse(rb, true)
+		if err != nil {
+			log.Warn().Err(err).Msg("error parsing")
+			// TODO: Possibly clean up ...
+			return nil, nil
+		}
+		return tcpAdu, nil
+	} else if err != nil {
+		log.Warn().Err(err).Msg("Got error reading")
+		return nil, nil
 	}
+	// TODO: maybe we return here a not enough error error
 	return nil, nil
-}
-
-func work(m *MessageCodec) {
-	// Start an endless loop
-	// TODO: Provide some means to terminate this ...
-	for {
-		if len(m.expectations) > 0 {
-			message, err := m.receive()
-			if err != nil {
-				fmt.Printf("got an error reading from transport %s", err.Error())
-			} else if message != nil {
-				now := time.Now()
-				messageHandled := false
-				// Go through all expectations
-				for index, expectation := range m.expectations {
-					// Check if this expectation has expired.
-					if now.After(expectation.expiration) {
-						// Remove this expectation from the list.
-						m.expectations = append(m.expectations[:index], m.expectations[index+1:]...)
-						break
-					}
-
-					// Check if the current message matches the expectations
-					// If it does, let it handle the message.
-					if accepts := expectation.acceptsMessage(message); accepts {
-						err = expectation.handleMessage(message)
-						if err == nil {
-							messageHandled = true
-							// Remove this expectation from the list.
-							m.expectations = append(m.expectations[:index], m.expectations[index+1:]...)
-						}
-						break
-					}
-				}
-
-				// If the message has not been handled and a default handler is provided, call this ...
-				if !messageHandled {
-					if m.defaultIncomingMessageChannel != nil {
-						m.defaultIncomingMessageChannel <- message
-					} else {
-						fmt.Printf("No handler registered for handling message %s", message)
-					}
-				}
-			} else {
-				time.Sleep(time.Millisecond * 10)
-			}
-		} else {
-			// Sleep for 10ms
-			time.Sleep(time.Millisecond * 10)
-		}
-	}
-}
-
-func (m MessageCodec) GetTransportInstance() transports.TransportInstance {
-	return m.transportInstance
 }

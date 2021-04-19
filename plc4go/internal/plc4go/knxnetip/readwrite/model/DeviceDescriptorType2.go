@@ -16,12 +16,13 @@
 // specific language governing permissions and limitations
 // under the License.
 //
+
 package model
 
 import (
 	"encoding/xml"
-	"errors"
 	"github.com/apache/plc4x/plc4go/internal/plc4go/spi/utils"
+	"github.com/pkg/errors"
 	"io"
 )
 
@@ -47,6 +48,7 @@ type IDeviceDescriptorType2 interface {
 	LengthInBits() uint16
 	Serialize(io utils.WriteBuffer) error
 	xml.Marshaler
+	xml.Unmarshaler
 }
 
 func NewDeviceDescriptorType2(manufacturerId uint16, deviceType uint16, version uint8, readSupported bool, writeSupported bool, logicalTagBase uint8, channelInfo1 *ChannelInformation, channelInfo2 *ChannelInformation, channelInfo3 *ChannelInformation, channelInfo4 *ChannelInformation) *DeviceDescriptorType2 {
@@ -71,6 +73,10 @@ func (m *DeviceDescriptorType2) GetTypeName() string {
 }
 
 func (m *DeviceDescriptorType2) LengthInBits() uint16 {
+	return m.LengthInBitsConditional(false)
+}
+
+func (m *DeviceDescriptorType2) LengthInBitsConditional(lastItem bool) uint16 {
 	lengthInBits := uint16(0)
 
 	// Simple field (manufacturerId)
@@ -110,66 +116,66 @@ func (m *DeviceDescriptorType2) LengthInBytes() uint16 {
 	return m.LengthInBits() / 8
 }
 
-func DeviceDescriptorType2Parse(io *utils.ReadBuffer) (*DeviceDescriptorType2, error) {
+func DeviceDescriptorType2Parse(io utils.ReadBuffer) (*DeviceDescriptorType2, error) {
 
 	// Simple Field (manufacturerId)
 	manufacturerId, _manufacturerIdErr := io.ReadUint16(16)
 	if _manufacturerIdErr != nil {
-		return nil, errors.New("Error parsing 'manufacturerId' field " + _manufacturerIdErr.Error())
+		return nil, errors.Wrap(_manufacturerIdErr, "Error parsing 'manufacturerId' field")
 	}
 
 	// Simple Field (deviceType)
 	deviceType, _deviceTypeErr := io.ReadUint16(16)
 	if _deviceTypeErr != nil {
-		return nil, errors.New("Error parsing 'deviceType' field " + _deviceTypeErr.Error())
+		return nil, errors.Wrap(_deviceTypeErr, "Error parsing 'deviceType' field")
 	}
 
 	// Simple Field (version)
 	version, _versionErr := io.ReadUint8(8)
 	if _versionErr != nil {
-		return nil, errors.New("Error parsing 'version' field " + _versionErr.Error())
+		return nil, errors.Wrap(_versionErr, "Error parsing 'version' field")
 	}
 
 	// Simple Field (readSupported)
 	readSupported, _readSupportedErr := io.ReadBit()
 	if _readSupportedErr != nil {
-		return nil, errors.New("Error parsing 'readSupported' field " + _readSupportedErr.Error())
+		return nil, errors.Wrap(_readSupportedErr, "Error parsing 'readSupported' field")
 	}
 
 	// Simple Field (writeSupported)
 	writeSupported, _writeSupportedErr := io.ReadBit()
 	if _writeSupportedErr != nil {
-		return nil, errors.New("Error parsing 'writeSupported' field " + _writeSupportedErr.Error())
+		return nil, errors.Wrap(_writeSupportedErr, "Error parsing 'writeSupported' field")
 	}
 
 	// Simple Field (logicalTagBase)
 	logicalTagBase, _logicalTagBaseErr := io.ReadUint8(6)
 	if _logicalTagBaseErr != nil {
-		return nil, errors.New("Error parsing 'logicalTagBase' field " + _logicalTagBaseErr.Error())
+		return nil, errors.Wrap(_logicalTagBaseErr, "Error parsing 'logicalTagBase' field")
 	}
 
 	// Simple Field (channelInfo1)
 	channelInfo1, _channelInfo1Err := ChannelInformationParse(io)
 	if _channelInfo1Err != nil {
-		return nil, errors.New("Error parsing 'channelInfo1' field " + _channelInfo1Err.Error())
+		return nil, errors.Wrap(_channelInfo1Err, "Error parsing 'channelInfo1' field")
 	}
 
 	// Simple Field (channelInfo2)
 	channelInfo2, _channelInfo2Err := ChannelInformationParse(io)
 	if _channelInfo2Err != nil {
-		return nil, errors.New("Error parsing 'channelInfo2' field " + _channelInfo2Err.Error())
+		return nil, errors.Wrap(_channelInfo2Err, "Error parsing 'channelInfo2' field")
 	}
 
 	// Simple Field (channelInfo3)
 	channelInfo3, _channelInfo3Err := ChannelInformationParse(io)
 	if _channelInfo3Err != nil {
-		return nil, errors.New("Error parsing 'channelInfo3' field " + _channelInfo3Err.Error())
+		return nil, errors.Wrap(_channelInfo3Err, "Error parsing 'channelInfo3' field")
 	}
 
 	// Simple Field (channelInfo4)
 	channelInfo4, _channelInfo4Err := ChannelInformationParse(io)
 	if _channelInfo4Err != nil {
-		return nil, errors.New("Error parsing 'channelInfo4' field " + _channelInfo4Err.Error())
+		return nil, errors.Wrap(_channelInfo4Err, "Error parsing 'channelInfo4' field")
 	}
 
 	// Create the instance
@@ -177,89 +183,93 @@ func DeviceDescriptorType2Parse(io *utils.ReadBuffer) (*DeviceDescriptorType2, e
 }
 
 func (m *DeviceDescriptorType2) Serialize(io utils.WriteBuffer) error {
+	io.PushContext("DeviceDescriptorType2")
 
 	// Simple Field (manufacturerId)
 	manufacturerId := uint16(m.ManufacturerId)
-	_manufacturerIdErr := io.WriteUint16(16, (manufacturerId))
+	_manufacturerIdErr := io.WriteUint16("manufacturerId", 16, (manufacturerId))
 	if _manufacturerIdErr != nil {
-		return errors.New("Error serializing 'manufacturerId' field " + _manufacturerIdErr.Error())
+		return errors.Wrap(_manufacturerIdErr, "Error serializing 'manufacturerId' field")
 	}
 
 	// Simple Field (deviceType)
 	deviceType := uint16(m.DeviceType)
-	_deviceTypeErr := io.WriteUint16(16, (deviceType))
+	_deviceTypeErr := io.WriteUint16("deviceType", 16, (deviceType))
 	if _deviceTypeErr != nil {
-		return errors.New("Error serializing 'deviceType' field " + _deviceTypeErr.Error())
+		return errors.Wrap(_deviceTypeErr, "Error serializing 'deviceType' field")
 	}
 
 	// Simple Field (version)
 	version := uint8(m.Version)
-	_versionErr := io.WriteUint8(8, (version))
+	_versionErr := io.WriteUint8("version", 8, (version))
 	if _versionErr != nil {
-		return errors.New("Error serializing 'version' field " + _versionErr.Error())
+		return errors.Wrap(_versionErr, "Error serializing 'version' field")
 	}
 
 	// Simple Field (readSupported)
 	readSupported := bool(m.ReadSupported)
-	_readSupportedErr := io.WriteBit((readSupported))
+	_readSupportedErr := io.WriteBit("readSupported", (readSupported))
 	if _readSupportedErr != nil {
-		return errors.New("Error serializing 'readSupported' field " + _readSupportedErr.Error())
+		return errors.Wrap(_readSupportedErr, "Error serializing 'readSupported' field")
 	}
 
 	// Simple Field (writeSupported)
 	writeSupported := bool(m.WriteSupported)
-	_writeSupportedErr := io.WriteBit((writeSupported))
+	_writeSupportedErr := io.WriteBit("writeSupported", (writeSupported))
 	if _writeSupportedErr != nil {
-		return errors.New("Error serializing 'writeSupported' field " + _writeSupportedErr.Error())
+		return errors.Wrap(_writeSupportedErr, "Error serializing 'writeSupported' field")
 	}
 
 	// Simple Field (logicalTagBase)
 	logicalTagBase := uint8(m.LogicalTagBase)
-	_logicalTagBaseErr := io.WriteUint8(6, (logicalTagBase))
+	_logicalTagBaseErr := io.WriteUint8("logicalTagBase", 6, (logicalTagBase))
 	if _logicalTagBaseErr != nil {
-		return errors.New("Error serializing 'logicalTagBase' field " + _logicalTagBaseErr.Error())
+		return errors.Wrap(_logicalTagBaseErr, "Error serializing 'logicalTagBase' field")
 	}
 
 	// Simple Field (channelInfo1)
 	_channelInfo1Err := m.ChannelInfo1.Serialize(io)
 	if _channelInfo1Err != nil {
-		return errors.New("Error serializing 'channelInfo1' field " + _channelInfo1Err.Error())
+		return errors.Wrap(_channelInfo1Err, "Error serializing 'channelInfo1' field")
 	}
 
 	// Simple Field (channelInfo2)
 	_channelInfo2Err := m.ChannelInfo2.Serialize(io)
 	if _channelInfo2Err != nil {
-		return errors.New("Error serializing 'channelInfo2' field " + _channelInfo2Err.Error())
+		return errors.Wrap(_channelInfo2Err, "Error serializing 'channelInfo2' field")
 	}
 
 	// Simple Field (channelInfo3)
 	_channelInfo3Err := m.ChannelInfo3.Serialize(io)
 	if _channelInfo3Err != nil {
-		return errors.New("Error serializing 'channelInfo3' field " + _channelInfo3Err.Error())
+		return errors.Wrap(_channelInfo3Err, "Error serializing 'channelInfo3' field")
 	}
 
 	// Simple Field (channelInfo4)
 	_channelInfo4Err := m.ChannelInfo4.Serialize(io)
 	if _channelInfo4Err != nil {
-		return errors.New("Error serializing 'channelInfo4' field " + _channelInfo4Err.Error())
+		return errors.Wrap(_channelInfo4Err, "Error serializing 'channelInfo4' field")
 	}
 
+	io.PopContext("DeviceDescriptorType2")
 	return nil
 }
 
 func (m *DeviceDescriptorType2) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
 	var token xml.Token
 	var err error
+	foundContent := false
 	for {
 		token, err = d.Token()
 		if err != nil {
-			if err == io.EOF {
+			if err == io.EOF && foundContent {
 				return nil
 			}
 			return err
 		}
 		switch token.(type) {
 		case xml.StartElement:
+			foundContent = true
 			tok := token.(xml.StartElement)
 			switch tok.Name.Local {
 			case "manufacturerId":
@@ -299,29 +309,29 @@ func (m *DeviceDescriptorType2) UnmarshalXML(d *xml.Decoder, start xml.StartElem
 				}
 				m.LogicalTagBase = data
 			case "channelInfo1":
-				var data *ChannelInformation
-				if err := d.DecodeElement(data, &tok); err != nil {
+				var data ChannelInformation
+				if err := d.DecodeElement(&data, &tok); err != nil {
 					return err
 				}
-				m.ChannelInfo1 = data
+				m.ChannelInfo1 = &data
 			case "channelInfo2":
-				var data *ChannelInformation
-				if err := d.DecodeElement(data, &tok); err != nil {
+				var data ChannelInformation
+				if err := d.DecodeElement(&data, &tok); err != nil {
 					return err
 				}
-				m.ChannelInfo2 = data
+				m.ChannelInfo2 = &data
 			case "channelInfo3":
-				var data *ChannelInformation
-				if err := d.DecodeElement(data, &tok); err != nil {
+				var data ChannelInformation
+				if err := d.DecodeElement(&data, &tok); err != nil {
 					return err
 				}
-				m.ChannelInfo3 = data
+				m.ChannelInfo3 = &data
 			case "channelInfo4":
-				var data *ChannelInformation
-				if err := d.DecodeElement(data, &tok); err != nil {
+				var data ChannelInformation
+				if err := d.DecodeElement(&data, &tok); err != nil {
 					return err
 				}
-				m.ChannelInfo4 = data
+				m.ChannelInfo4 = &data
 			}
 		}
 	}
@@ -368,4 +378,43 @@ func (m *DeviceDescriptorType2) MarshalXML(e *xml.Encoder, start xml.StartElemen
 		return err
 	}
 	return nil
+}
+
+func (m DeviceDescriptorType2) String() string {
+	return string(m.Box("", 120))
+}
+
+func (m DeviceDescriptorType2) Box(name string, width int) utils.AsciiBox {
+	boxName := "DeviceDescriptorType2"
+	if name != "" {
+		boxName += "/" + name
+	}
+	boxes := make([]utils.AsciiBox, 0)
+	// Simple field (case simple)
+	// uint16 can be boxed as anything with the least amount of space
+	boxes = append(boxes, utils.BoxAnything("ManufacturerId", m.ManufacturerId, -1))
+	// Simple field (case simple)
+	// uint16 can be boxed as anything with the least amount of space
+	boxes = append(boxes, utils.BoxAnything("DeviceType", m.DeviceType, -1))
+	// Simple field (case simple)
+	// uint8 can be boxed as anything with the least amount of space
+	boxes = append(boxes, utils.BoxAnything("Version", m.Version, -1))
+	// Simple field (case simple)
+	// bool can be boxed as anything with the least amount of space
+	boxes = append(boxes, utils.BoxAnything("ReadSupported", m.ReadSupported, -1))
+	// Simple field (case simple)
+	// bool can be boxed as anything with the least amount of space
+	boxes = append(boxes, utils.BoxAnything("WriteSupported", m.WriteSupported, -1))
+	// Simple field (case simple)
+	// uint8 can be boxed as anything with the least amount of space
+	boxes = append(boxes, utils.BoxAnything("LogicalTagBase", m.LogicalTagBase, -1))
+	// Complex field (case complex)
+	boxes = append(boxes, m.ChannelInfo1.Box("channelInfo1", width-2))
+	// Complex field (case complex)
+	boxes = append(boxes, m.ChannelInfo2.Box("channelInfo2", width-2))
+	// Complex field (case complex)
+	boxes = append(boxes, m.ChannelInfo3.Box("channelInfo3", width-2))
+	// Complex field (case complex)
+	boxes = append(boxes, m.ChannelInfo4.Box("channelInfo4", width-2))
+	return utils.BoxBox(boxName, utils.AlignBoxes(boxes, width-2), 0)
 }

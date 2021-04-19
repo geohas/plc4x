@@ -16,12 +16,13 @@
 // specific language governing permissions and limitations
 // under the License.
 //
+
 package model
 
 import (
 	"encoding/xml"
-	"errors"
 	"github.com/apache/plc4x/plc4go/internal/plc4go/spi/utils"
+	"github.com/pkg/errors"
 	"io"
 	"reflect"
 	"strings"
@@ -43,6 +44,7 @@ type IApdu interface {
 	LengthInBits() uint16
 	Serialize(io utils.WriteBuffer) error
 	xml.Marshaler
+	xml.Unmarshaler
 }
 
 type IApduParent interface {
@@ -55,6 +57,7 @@ type IApduChild interface {
 	InitializeParent(parent *Apdu, numbered bool, counter uint8)
 	GetTypeName() string
 	IApdu
+	utils.AsciiBoxer
 }
 
 func NewApdu(numbered bool, counter uint8) *Apdu {
@@ -79,8 +82,15 @@ func (m *Apdu) GetTypeName() string {
 }
 
 func (m *Apdu) LengthInBits() uint16 {
-	lengthInBits := uint16(0)
+	return m.LengthInBitsConditional(false)
+}
 
+func (m *Apdu) LengthInBitsConditional(lastItem bool) uint16 {
+	return m.Child.LengthInBits()
+}
+
+func (m *Apdu) ParentLengthInBits() uint16 {
+	lengthInBits := uint16(0)
 	// Discriminator Field (control)
 	lengthInBits += 1
 
@@ -90,9 +100,6 @@ func (m *Apdu) LengthInBits() uint16 {
 	// Simple field (counter)
 	lengthInBits += 4
 
-	// Length of sub-type elements will be added by sub-type...
-	lengthInBits += m.Child.LengthInBits()
-
 	return lengthInBits
 }
 
@@ -100,37 +107,40 @@ func (m *Apdu) LengthInBytes() uint16 {
 	return m.LengthInBits() / 8
 }
 
-func ApduParse(io *utils.ReadBuffer, dataLength uint8) (*Apdu, error) {
+func ApduParse(io utils.ReadBuffer, dataLength uint8) (*Apdu, error) {
 
 	// Discriminator Field (control) (Used as input to a switch field)
 	control, _controlErr := io.ReadUint8(1)
 	if _controlErr != nil {
-		return nil, errors.New("Error parsing 'control' field " + _controlErr.Error())
+		return nil, errors.Wrap(_controlErr, "Error parsing 'control' field")
 	}
 
 	// Simple Field (numbered)
 	numbered, _numberedErr := io.ReadBit()
 	if _numberedErr != nil {
-		return nil, errors.New("Error parsing 'numbered' field " + _numberedErr.Error())
+		return nil, errors.Wrap(_numberedErr, "Error parsing 'numbered' field")
 	}
 
 	// Simple Field (counter)
 	counter, _counterErr := io.ReadUint8(4)
 	if _counterErr != nil {
-		return nil, errors.New("Error parsing 'counter' field " + _counterErr.Error())
+		return nil, errors.Wrap(_counterErr, "Error parsing 'counter' field")
 	}
 
 	// Switch Field (Depending on the discriminator values, passes the instantiation to a sub-type)
 	var _parent *Apdu
 	var typeSwitchError error
 	switch {
-	case control == 1:
+	case control == 1: // ApduControlContainer
 		_parent, typeSwitchError = ApduControlContainerParse(io)
-	case control == 0:
+	case control == 0: // ApduDataContainer
 		_parent, typeSwitchError = ApduDataContainerParse(io, dataLength)
+	default:
+		// TODO: return actual type
+		typeSwitchError = errors.New("Unmapped type")
 	}
 	if typeSwitchError != nil {
-		return nil, errors.New("Error parsing sub-type for type-switch. " + typeSwitchError.Error())
+		return nil, errors.Wrap(typeSwitchError, "Error parsing sub-type for type-switch.")
 	}
 
 	// Finish initializing
@@ -143,50 +153,59 @@ func (m *Apdu) Serialize(io utils.WriteBuffer) error {
 }
 
 func (m *Apdu) SerializeParent(io utils.WriteBuffer, child IApdu, serializeChildFunction func() error) error {
+	io.PushContext("Apdu")
 
 	// Discriminator Field (control) (Used as input to a switch field)
 	control := uint8(child.Control())
-	_controlErr := io.WriteUint8(1, (control))
+	_controlErr := io.WriteUint8("control", 1, (control))
+
 	if _controlErr != nil {
-		return errors.New("Error serializing 'control' field " + _controlErr.Error())
+		return errors.Wrap(_controlErr, "Error serializing 'control' field")
 	}
 
 	// Simple Field (numbered)
 	numbered := bool(m.Numbered)
-	_numberedErr := io.WriteBit((numbered))
+	_numberedErr := io.WriteBit("numbered", (numbered))
 	if _numberedErr != nil {
-		return errors.New("Error serializing 'numbered' field " + _numberedErr.Error())
+		return errors.Wrap(_numberedErr, "Error serializing 'numbered' field")
 	}
 
 	// Simple Field (counter)
 	counter := uint8(m.Counter)
-	_counterErr := io.WriteUint8(4, (counter))
+	_counterErr := io.WriteUint8("counter", 4, (counter))
 	if _counterErr != nil {
-		return errors.New("Error serializing 'counter' field " + _counterErr.Error())
+		return errors.Wrap(_counterErr, "Error serializing 'counter' field")
 	}
 
 	// Switch field (Depending on the discriminator values, passes the serialization to a sub-type)
 	_typeSwitchErr := serializeChildFunction()
 	if _typeSwitchErr != nil {
-		return errors.New("Error serializing sub-type field " + _typeSwitchErr.Error())
+		return errors.Wrap(_typeSwitchErr, "Error serializing sub-type field")
 	}
 
+	io.PopContext("Apdu")
 	return nil
 }
 
 func (m *Apdu) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
 	var token xml.Token
 	var err error
+	foundContent := false
+	if start.Attr != nil && len(start.Attr) > 0 {
+		switch start.Attr[0].Value {
+		}
+	}
 	for {
 		token, err = d.Token()
 		if err != nil {
-			if err == io.EOF {
+			if err == io.EOF && foundContent {
 				return nil
 			}
 			return err
 		}
 		switch token.(type) {
 		case xml.StartElement:
+			foundContent = true
 			tok := token.(xml.StartElement)
 			switch tok.Name.Local {
 			case "numbered":
@@ -202,7 +221,15 @@ func (m *Apdu) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
 				}
 				m.Counter = data
 			default:
-				switch start.Attr[0].Value {
+				attr := start.Attr
+				if attr == nil || len(attr) <= 0 {
+					// TODO: workaround for bug with nested lists
+					attr = tok.Attr
+				}
+				if attr == nil || len(attr) <= 0 {
+					panic("Couldn't determine class type for childs of Apdu")
+				}
+				switch attr[0].Value {
 				case "org.apache.plc4x.java.knxnetip.readwrite.ApduControlContainer":
 					var dt *ApduControlContainer
 					if m.Child != nil {
@@ -249,7 +276,7 @@ func (m *Apdu) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
 	}
 	marshaller, ok := m.Child.(xml.Marshaler)
 	if !ok {
-		return errors.New("child is not castable to Marshaler")
+		return errors.Errorf("child is not castable to Marshaler. Actual type %T", m.Child)
 	}
 	if err := marshaller.MarshalXML(e, start); err != nil {
 		return err
@@ -258,4 +285,33 @@ func (m *Apdu) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
 		return err
 	}
 	return nil
+}
+
+func (m Apdu) String() string {
+	return string(m.Box("", 120))
+}
+
+func (m *Apdu) Box(name string, width int) utils.AsciiBox {
+	return m.Child.Box(name, width)
+}
+
+func (m *Apdu) BoxParent(name string, width int, childBoxer func() []utils.AsciiBox) utils.AsciiBox {
+	boxName := "Apdu"
+	if name != "" {
+		boxName += "/" + name
+	}
+	boxes := make([]utils.AsciiBox, 0)
+	// Discriminator Field (control) (Used as input to a switch field)
+	control := uint8(m.Child.Control())
+	// uint8 can be boxed as anything with the least amount of space
+	boxes = append(boxes, utils.BoxAnything("Control", control, -1))
+	// Simple field (case simple)
+	// bool can be boxed as anything with the least amount of space
+	boxes = append(boxes, utils.BoxAnything("Numbered", m.Numbered, -1))
+	// Simple field (case simple)
+	// uint8 can be boxed as anything with the least amount of space
+	boxes = append(boxes, utils.BoxAnything("Counter", m.Counter, -1))
+	// Switch field (Depending on the discriminator values, passes the boxing to a sub-type)
+	boxes = append(boxes, childBoxer()...)
+	return utils.BoxBox(boxName, utils.AlignBoxes(boxes, width-2), 0)
 }

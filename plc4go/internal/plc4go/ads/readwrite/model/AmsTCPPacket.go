@@ -16,12 +16,13 @@
 // specific language governing permissions and limitations
 // under the License.
 //
+
 package model
 
 import (
 	"encoding/xml"
-	"errors"
 	"github.com/apache/plc4x/plc4go/internal/plc4go/spi/utils"
+	"github.com/pkg/errors"
 	"github.com/rs/zerolog/log"
 	"io"
 )
@@ -39,6 +40,7 @@ type IAmsTCPPacket interface {
 	LengthInBits() uint16
 	Serialize(io utils.WriteBuffer) error
 	xml.Marshaler
+	xml.Unmarshaler
 }
 
 func NewAmsTCPPacket(userdata *AmsPacket) *AmsTCPPacket {
@@ -63,6 +65,10 @@ func (m *AmsTCPPacket) GetTypeName() string {
 }
 
 func (m *AmsTCPPacket) LengthInBits() uint16 {
+	return m.LengthInBitsConditional(false)
+}
+
+func (m *AmsTCPPacket) LengthInBitsConditional(lastItem bool) uint16 {
 	lengthInBits := uint16(0)
 
 	// Reserved Field (reserved)
@@ -81,13 +87,13 @@ func (m *AmsTCPPacket) LengthInBytes() uint16 {
 	return m.LengthInBits() / 8
 }
 
-func AmsTCPPacketParse(io *utils.ReadBuffer) (*AmsTCPPacket, error) {
+func AmsTCPPacketParse(io utils.ReadBuffer) (*AmsTCPPacket, error) {
 
 	// Reserved Field (Compartmentalized so the "reserved" variable can't leak)
 	{
 		reserved, _err := io.ReadUint16(16)
 		if _err != nil {
-			return nil, errors.New("Error parsing 'reserved' field " + _err.Error())
+			return nil, errors.Wrap(_err, "Error parsing 'reserved' field")
 		}
 		if reserved != uint16(0x0000) {
 			log.Info().Fields(map[string]interface{}{
@@ -98,15 +104,16 @@ func AmsTCPPacketParse(io *utils.ReadBuffer) (*AmsTCPPacket, error) {
 	}
 
 	// Implicit Field (length) (Used for parsing, but it's value is not stored as it's implicitly given by the objects content)
-	_, _lengthErr := io.ReadUint32(32)
+	length, _lengthErr := io.ReadUint32(32)
+	_ = length
 	if _lengthErr != nil {
-		return nil, errors.New("Error parsing 'length' field " + _lengthErr.Error())
+		return nil, errors.Wrap(_lengthErr, "Error parsing 'length' field")
 	}
 
 	// Simple Field (userdata)
 	userdata, _userdataErr := AmsPacketParse(io)
 	if _userdataErr != nil {
-		return nil, errors.New("Error parsing 'userdata' field " + _userdataErr.Error())
+		return nil, errors.Wrap(_userdataErr, "Error parsing 'userdata' field")
 	}
 
 	// Create the instance
@@ -114,52 +121,56 @@ func AmsTCPPacketParse(io *utils.ReadBuffer) (*AmsTCPPacket, error) {
 }
 
 func (m *AmsTCPPacket) Serialize(io utils.WriteBuffer) error {
+	io.PushContext("AmsTCPPacket")
 
 	// Reserved Field (reserved)
 	{
-		_err := io.WriteUint16(16, uint16(0x0000))
+		_err := io.WriteUint16("reserved", 16, uint16(0x0000))
 		if _err != nil {
-			return errors.New("Error serializing 'reserved' field " + _err.Error())
+			return errors.Wrap(_err, "Error serializing 'reserved' field")
 		}
 	}
 
 	// Implicit Field (length) (Used for parsing, but it's value is not stored as it's implicitly given by the objects content)
 	length := uint32(m.Userdata.LengthInBytes())
-	_lengthErr := io.WriteUint32(32, (length))
+	_lengthErr := io.WriteUint32("length", 32, (length))
 	if _lengthErr != nil {
-		return errors.New("Error serializing 'length' field " + _lengthErr.Error())
+		return errors.Wrap(_lengthErr, "Error serializing 'length' field")
 	}
 
 	// Simple Field (userdata)
 	_userdataErr := m.Userdata.Serialize(io)
 	if _userdataErr != nil {
-		return errors.New("Error serializing 'userdata' field " + _userdataErr.Error())
+		return errors.Wrap(_userdataErr, "Error serializing 'userdata' field")
 	}
 
+	io.PopContext("AmsTCPPacket")
 	return nil
 }
 
 func (m *AmsTCPPacket) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
 	var token xml.Token
 	var err error
+	foundContent := false
 	for {
 		token, err = d.Token()
 		if err != nil {
-			if err == io.EOF {
+			if err == io.EOF && foundContent {
 				return nil
 			}
 			return err
 		}
 		switch token.(type) {
 		case xml.StartElement:
+			foundContent = true
 			tok := token.(xml.StartElement)
 			switch tok.Name.Local {
 			case "userdata":
-				var data *AmsPacket
-				if err := d.DecodeElement(data, &tok); err != nil {
+				var data AmsPacket
+				if err := d.DecodeElement(&data, &tok); err != nil {
 					return err
 				}
-				m.Userdata = data
+				m.Userdata = &data
 			}
 		}
 	}
@@ -179,4 +190,26 @@ func (m *AmsTCPPacket) MarshalXML(e *xml.Encoder, start xml.StartElement) error 
 		return err
 	}
 	return nil
+}
+
+func (m AmsTCPPacket) String() string {
+	return string(m.Box("", 120))
+}
+
+func (m AmsTCPPacket) Box(name string, width int) utils.AsciiBox {
+	boxName := "AmsTCPPacket"
+	if name != "" {
+		boxName += "/" + name
+	}
+	boxes := make([]utils.AsciiBox, 0)
+	// Reserved Field (reserved)
+	// reserved field can be boxed as anything with the least amount of space
+	boxes = append(boxes, utils.BoxAnything("reserved", uint16(0x0000), -1))
+	// Implicit Field (length)
+	length := uint32(m.Userdata.LengthInBytes())
+	// uint32 can be boxed as anything with the least amount of space
+	boxes = append(boxes, utils.BoxAnything("Length", length, -1))
+	// Complex field (case complex)
+	boxes = append(boxes, m.Userdata.Box("userdata", width-2))
+	return utils.BoxBox(boxName, utils.AlignBoxes(boxes, width-2), 0)
 }

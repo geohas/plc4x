@@ -16,12 +16,13 @@
 // specific language governing permissions and limitations
 // under the License.
 //
+
 package model
 
 import (
 	"encoding/xml"
-	"errors"
 	"github.com/apache/plc4x/plc4go/internal/plc4go/spi/utils"
+	"github.com/pkg/errors"
 	"io"
 )
 
@@ -39,6 +40,7 @@ type IChannelInformation interface {
 	LengthInBits() uint16
 	Serialize(io utils.WriteBuffer) error
 	xml.Marshaler
+	xml.Unmarshaler
 }
 
 func NewChannelInformation(numChannels uint8, channelCode uint16) *ChannelInformation {
@@ -63,6 +65,10 @@ func (m *ChannelInformation) GetTypeName() string {
 }
 
 func (m *ChannelInformation) LengthInBits() uint16 {
+	return m.LengthInBitsConditional(false)
+}
+
+func (m *ChannelInformation) LengthInBitsConditional(lastItem bool) uint16 {
 	lengthInBits := uint16(0)
 
 	// Simple field (numChannels)
@@ -78,18 +84,18 @@ func (m *ChannelInformation) LengthInBytes() uint16 {
 	return m.LengthInBits() / 8
 }
 
-func ChannelInformationParse(io *utils.ReadBuffer) (*ChannelInformation, error) {
+func ChannelInformationParse(io utils.ReadBuffer) (*ChannelInformation, error) {
 
 	// Simple Field (numChannels)
 	numChannels, _numChannelsErr := io.ReadUint8(3)
 	if _numChannelsErr != nil {
-		return nil, errors.New("Error parsing 'numChannels' field " + _numChannelsErr.Error())
+		return nil, errors.Wrap(_numChannelsErr, "Error parsing 'numChannels' field")
 	}
 
 	// Simple Field (channelCode)
 	channelCode, _channelCodeErr := io.ReadUint16(13)
 	if _channelCodeErr != nil {
-		return nil, errors.New("Error parsing 'channelCode' field " + _channelCodeErr.Error())
+		return nil, errors.Wrap(_channelCodeErr, "Error parsing 'channelCode' field")
 	}
 
 	// Create the instance
@@ -97,37 +103,41 @@ func ChannelInformationParse(io *utils.ReadBuffer) (*ChannelInformation, error) 
 }
 
 func (m *ChannelInformation) Serialize(io utils.WriteBuffer) error {
+	io.PushContext("ChannelInformation")
 
 	// Simple Field (numChannels)
 	numChannels := uint8(m.NumChannels)
-	_numChannelsErr := io.WriteUint8(3, (numChannels))
+	_numChannelsErr := io.WriteUint8("numChannels", 3, (numChannels))
 	if _numChannelsErr != nil {
-		return errors.New("Error serializing 'numChannels' field " + _numChannelsErr.Error())
+		return errors.Wrap(_numChannelsErr, "Error serializing 'numChannels' field")
 	}
 
 	// Simple Field (channelCode)
 	channelCode := uint16(m.ChannelCode)
-	_channelCodeErr := io.WriteUint16(13, (channelCode))
+	_channelCodeErr := io.WriteUint16("channelCode", 13, (channelCode))
 	if _channelCodeErr != nil {
-		return errors.New("Error serializing 'channelCode' field " + _channelCodeErr.Error())
+		return errors.Wrap(_channelCodeErr, "Error serializing 'channelCode' field")
 	}
 
+	io.PopContext("ChannelInformation")
 	return nil
 }
 
 func (m *ChannelInformation) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
 	var token xml.Token
 	var err error
+	foundContent := false
 	for {
 		token, err = d.Token()
 		if err != nil {
-			if err == io.EOF {
+			if err == io.EOF && foundContent {
 				return nil
 			}
 			return err
 		}
 		switch token.(type) {
 		case xml.StartElement:
+			foundContent = true
 			tok := token.(xml.StartElement)
 			switch tok.Name.Local {
 			case "numChannels":
@@ -164,4 +174,23 @@ func (m *ChannelInformation) MarshalXML(e *xml.Encoder, start xml.StartElement) 
 		return err
 	}
 	return nil
+}
+
+func (m ChannelInformation) String() string {
+	return string(m.Box("", 120))
+}
+
+func (m ChannelInformation) Box(name string, width int) utils.AsciiBox {
+	boxName := "ChannelInformation"
+	if name != "" {
+		boxName += "/" + name
+	}
+	boxes := make([]utils.AsciiBox, 0)
+	// Simple field (case simple)
+	// uint8 can be boxed as anything with the least amount of space
+	boxes = append(boxes, utils.BoxAnything("NumChannels", m.NumChannels, -1))
+	// Simple field (case simple)
+	// uint16 can be boxed as anything with the least amount of space
+	boxes = append(boxes, utils.BoxAnything("ChannelCode", m.ChannelCode, -1))
+	return utils.BoxBox(boxName, utils.AlignBoxes(boxes, width-2), 0)
 }

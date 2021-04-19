@@ -16,12 +16,13 @@
 // specific language governing permissions and limitations
 // under the License.
 //
+
 package model
 
 import (
 	"encoding/xml"
-	"errors"
 	"github.com/apache/plc4x/plc4go/internal/plc4go/spi/utils"
+	"github.com/pkg/errors"
 	"io"
 )
 
@@ -40,6 +41,7 @@ type IModbusPDUGetComEventCounterResponse interface {
 	LengthInBits() uint16
 	Serialize(io utils.WriteBuffer) error
 	xml.Marshaler
+	xml.Unmarshaler
 }
 
 ///////////////////////////////////////////////////////////
@@ -94,7 +96,11 @@ func (m *ModbusPDUGetComEventCounterResponse) GetTypeName() string {
 }
 
 func (m *ModbusPDUGetComEventCounterResponse) LengthInBits() uint16 {
-	lengthInBits := uint16(0)
+	return m.LengthInBitsConditional(false)
+}
+
+func (m *ModbusPDUGetComEventCounterResponse) LengthInBitsConditional(lastItem bool) uint16 {
+	lengthInBits := uint16(m.Parent.ParentLengthInBits())
 
 	// Simple field (status)
 	lengthInBits += 16
@@ -109,18 +115,18 @@ func (m *ModbusPDUGetComEventCounterResponse) LengthInBytes() uint16 {
 	return m.LengthInBits() / 8
 }
 
-func ModbusPDUGetComEventCounterResponseParse(io *utils.ReadBuffer) (*ModbusPDU, error) {
+func ModbusPDUGetComEventCounterResponseParse(io utils.ReadBuffer) (*ModbusPDU, error) {
 
 	// Simple Field (status)
 	status, _statusErr := io.ReadUint16(16)
 	if _statusErr != nil {
-		return nil, errors.New("Error parsing 'status' field " + _statusErr.Error())
+		return nil, errors.Wrap(_statusErr, "Error parsing 'status' field")
 	}
 
 	// Simple Field (eventCount)
 	eventCount, _eventCountErr := io.ReadUint16(16)
 	if _eventCountErr != nil {
-		return nil, errors.New("Error parsing 'eventCount' field " + _eventCountErr.Error())
+		return nil, errors.Wrap(_eventCountErr, "Error parsing 'eventCount' field")
 	}
 
 	// Create a partially initialized instance
@@ -135,21 +141,23 @@ func ModbusPDUGetComEventCounterResponseParse(io *utils.ReadBuffer) (*ModbusPDU,
 
 func (m *ModbusPDUGetComEventCounterResponse) Serialize(io utils.WriteBuffer) error {
 	ser := func() error {
+		io.PushContext("ModbusPDUGetComEventCounterResponse")
 
 		// Simple Field (status)
 		status := uint16(m.Status)
-		_statusErr := io.WriteUint16(16, (status))
+		_statusErr := io.WriteUint16("status", 16, (status))
 		if _statusErr != nil {
-			return errors.New("Error serializing 'status' field " + _statusErr.Error())
+			return errors.Wrap(_statusErr, "Error serializing 'status' field")
 		}
 
 		// Simple Field (eventCount)
 		eventCount := uint16(m.EventCount)
-		_eventCountErr := io.WriteUint16(16, (eventCount))
+		_eventCountErr := io.WriteUint16("eventCount", 16, (eventCount))
 		if _eventCountErr != nil {
-			return errors.New("Error serializing 'eventCount' field " + _eventCountErr.Error())
+			return errors.Wrap(_eventCountErr, "Error serializing 'eventCount' field")
 		}
 
+		io.PopContext("ModbusPDUGetComEventCounterResponse")
 		return nil
 	}
 	return m.Parent.SerializeParent(io, m, ser)
@@ -158,10 +166,12 @@ func (m *ModbusPDUGetComEventCounterResponse) Serialize(io utils.WriteBuffer) er
 func (m *ModbusPDUGetComEventCounterResponse) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
 	var token xml.Token
 	var err error
+	foundContent := false
 	token = start
 	for {
 		switch token.(type) {
 		case xml.StartElement:
+			foundContent = true
 			tok := token.(xml.StartElement)
 			switch tok.Name.Local {
 			case "status":
@@ -180,7 +190,7 @@ func (m *ModbusPDUGetComEventCounterResponse) UnmarshalXML(d *xml.Decoder, start
 		}
 		token, err = d.Token()
 		if err != nil {
-			if err == io.EOF {
+			if err == io.EOF && foundContent {
 				return nil
 			}
 			return err
@@ -196,4 +206,26 @@ func (m *ModbusPDUGetComEventCounterResponse) MarshalXML(e *xml.Encoder, start x
 		return err
 	}
 	return nil
+}
+
+func (m ModbusPDUGetComEventCounterResponse) String() string {
+	return string(m.Box("", 120))
+}
+
+func (m ModbusPDUGetComEventCounterResponse) Box(name string, width int) utils.AsciiBox {
+	boxName := "ModbusPDUGetComEventCounterResponse"
+	if name != "" {
+		boxName += "/" + name
+	}
+	childBoxer := func() []utils.AsciiBox {
+		boxes := make([]utils.AsciiBox, 0)
+		// Simple field (case simple)
+		// uint16 can be boxed as anything with the least amount of space
+		boxes = append(boxes, utils.BoxAnything("Status", m.Status, -1))
+		// Simple field (case simple)
+		// uint16 can be boxed as anything with the least amount of space
+		boxes = append(boxes, utils.BoxAnything("EventCount", m.EventCount, -1))
+		return boxes
+	}
+	return m.Parent.BoxParent(boxName, width, childBoxer)
 }

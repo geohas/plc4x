@@ -16,12 +16,13 @@
 // specific language governing permissions and limitations
 // under the License.
 //
+
 package model
 
 import (
 	"encoding/xml"
-	"errors"
 	"github.com/apache/plc4x/plc4go/internal/plc4go/spi/utils"
+	"github.com/pkg/errors"
 	"io"
 )
 
@@ -39,6 +40,7 @@ type IModbusPDUReadFifoQueueRequest interface {
 	LengthInBits() uint16
 	Serialize(io utils.WriteBuffer) error
 	xml.Marshaler
+	xml.Unmarshaler
 }
 
 ///////////////////////////////////////////////////////////
@@ -92,7 +94,11 @@ func (m *ModbusPDUReadFifoQueueRequest) GetTypeName() string {
 }
 
 func (m *ModbusPDUReadFifoQueueRequest) LengthInBits() uint16 {
-	lengthInBits := uint16(0)
+	return m.LengthInBitsConditional(false)
+}
+
+func (m *ModbusPDUReadFifoQueueRequest) LengthInBitsConditional(lastItem bool) uint16 {
+	lengthInBits := uint16(m.Parent.ParentLengthInBits())
 
 	// Simple field (fifoPointerAddress)
 	lengthInBits += 16
@@ -104,12 +110,12 @@ func (m *ModbusPDUReadFifoQueueRequest) LengthInBytes() uint16 {
 	return m.LengthInBits() / 8
 }
 
-func ModbusPDUReadFifoQueueRequestParse(io *utils.ReadBuffer) (*ModbusPDU, error) {
+func ModbusPDUReadFifoQueueRequestParse(io utils.ReadBuffer) (*ModbusPDU, error) {
 
 	// Simple Field (fifoPointerAddress)
 	fifoPointerAddress, _fifoPointerAddressErr := io.ReadUint16(16)
 	if _fifoPointerAddressErr != nil {
-		return nil, errors.New("Error parsing 'fifoPointerAddress' field " + _fifoPointerAddressErr.Error())
+		return nil, errors.Wrap(_fifoPointerAddressErr, "Error parsing 'fifoPointerAddress' field")
 	}
 
 	// Create a partially initialized instance
@@ -123,14 +129,16 @@ func ModbusPDUReadFifoQueueRequestParse(io *utils.ReadBuffer) (*ModbusPDU, error
 
 func (m *ModbusPDUReadFifoQueueRequest) Serialize(io utils.WriteBuffer) error {
 	ser := func() error {
+		io.PushContext("ModbusPDUReadFifoQueueRequest")
 
 		// Simple Field (fifoPointerAddress)
 		fifoPointerAddress := uint16(m.FifoPointerAddress)
-		_fifoPointerAddressErr := io.WriteUint16(16, (fifoPointerAddress))
+		_fifoPointerAddressErr := io.WriteUint16("fifoPointerAddress", 16, (fifoPointerAddress))
 		if _fifoPointerAddressErr != nil {
-			return errors.New("Error serializing 'fifoPointerAddress' field " + _fifoPointerAddressErr.Error())
+			return errors.Wrap(_fifoPointerAddressErr, "Error serializing 'fifoPointerAddress' field")
 		}
 
+		io.PopContext("ModbusPDUReadFifoQueueRequest")
 		return nil
 	}
 	return m.Parent.SerializeParent(io, m, ser)
@@ -139,10 +147,12 @@ func (m *ModbusPDUReadFifoQueueRequest) Serialize(io utils.WriteBuffer) error {
 func (m *ModbusPDUReadFifoQueueRequest) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
 	var token xml.Token
 	var err error
+	foundContent := false
 	token = start
 	for {
 		switch token.(type) {
 		case xml.StartElement:
+			foundContent = true
 			tok := token.(xml.StartElement)
 			switch tok.Name.Local {
 			case "fifoPointerAddress":
@@ -155,7 +165,7 @@ func (m *ModbusPDUReadFifoQueueRequest) UnmarshalXML(d *xml.Decoder, start xml.S
 		}
 		token, err = d.Token()
 		if err != nil {
-			if err == io.EOF {
+			if err == io.EOF && foundContent {
 				return nil
 			}
 			return err
@@ -168,4 +178,23 @@ func (m *ModbusPDUReadFifoQueueRequest) MarshalXML(e *xml.Encoder, start xml.Sta
 		return err
 	}
 	return nil
+}
+
+func (m ModbusPDUReadFifoQueueRequest) String() string {
+	return string(m.Box("", 120))
+}
+
+func (m ModbusPDUReadFifoQueueRequest) Box(name string, width int) utils.AsciiBox {
+	boxName := "ModbusPDUReadFifoQueueRequest"
+	if name != "" {
+		boxName += "/" + name
+	}
+	childBoxer := func() []utils.AsciiBox {
+		boxes := make([]utils.AsciiBox, 0)
+		// Simple field (case simple)
+		// uint16 can be boxed as anything with the least amount of space
+		boxes = append(boxes, utils.BoxAnything("FifoPointerAddress", m.FifoPointerAddress, -1))
+		return boxes
+	}
+	return m.Parent.BoxParent(boxName, width, childBoxer)
 }

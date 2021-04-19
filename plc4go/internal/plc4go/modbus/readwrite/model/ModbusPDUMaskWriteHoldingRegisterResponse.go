@@ -16,12 +16,13 @@
 // specific language governing permissions and limitations
 // under the License.
 //
+
 package model
 
 import (
 	"encoding/xml"
-	"errors"
 	"github.com/apache/plc4x/plc4go/internal/plc4go/spi/utils"
+	"github.com/pkg/errors"
 	"io"
 )
 
@@ -41,6 +42,7 @@ type IModbusPDUMaskWriteHoldingRegisterResponse interface {
 	LengthInBits() uint16
 	Serialize(io utils.WriteBuffer) error
 	xml.Marshaler
+	xml.Unmarshaler
 }
 
 ///////////////////////////////////////////////////////////
@@ -96,7 +98,11 @@ func (m *ModbusPDUMaskWriteHoldingRegisterResponse) GetTypeName() string {
 }
 
 func (m *ModbusPDUMaskWriteHoldingRegisterResponse) LengthInBits() uint16 {
-	lengthInBits := uint16(0)
+	return m.LengthInBitsConditional(false)
+}
+
+func (m *ModbusPDUMaskWriteHoldingRegisterResponse) LengthInBitsConditional(lastItem bool) uint16 {
+	lengthInBits := uint16(m.Parent.ParentLengthInBits())
 
 	// Simple field (referenceAddress)
 	lengthInBits += 16
@@ -114,24 +120,24 @@ func (m *ModbusPDUMaskWriteHoldingRegisterResponse) LengthInBytes() uint16 {
 	return m.LengthInBits() / 8
 }
 
-func ModbusPDUMaskWriteHoldingRegisterResponseParse(io *utils.ReadBuffer) (*ModbusPDU, error) {
+func ModbusPDUMaskWriteHoldingRegisterResponseParse(io utils.ReadBuffer) (*ModbusPDU, error) {
 
 	// Simple Field (referenceAddress)
 	referenceAddress, _referenceAddressErr := io.ReadUint16(16)
 	if _referenceAddressErr != nil {
-		return nil, errors.New("Error parsing 'referenceAddress' field " + _referenceAddressErr.Error())
+		return nil, errors.Wrap(_referenceAddressErr, "Error parsing 'referenceAddress' field")
 	}
 
 	// Simple Field (andMask)
 	andMask, _andMaskErr := io.ReadUint16(16)
 	if _andMaskErr != nil {
-		return nil, errors.New("Error parsing 'andMask' field " + _andMaskErr.Error())
+		return nil, errors.Wrap(_andMaskErr, "Error parsing 'andMask' field")
 	}
 
 	// Simple Field (orMask)
 	orMask, _orMaskErr := io.ReadUint16(16)
 	if _orMaskErr != nil {
-		return nil, errors.New("Error parsing 'orMask' field " + _orMaskErr.Error())
+		return nil, errors.Wrap(_orMaskErr, "Error parsing 'orMask' field")
 	}
 
 	// Create a partially initialized instance
@@ -147,28 +153,30 @@ func ModbusPDUMaskWriteHoldingRegisterResponseParse(io *utils.ReadBuffer) (*Modb
 
 func (m *ModbusPDUMaskWriteHoldingRegisterResponse) Serialize(io utils.WriteBuffer) error {
 	ser := func() error {
+		io.PushContext("ModbusPDUMaskWriteHoldingRegisterResponse")
 
 		// Simple Field (referenceAddress)
 		referenceAddress := uint16(m.ReferenceAddress)
-		_referenceAddressErr := io.WriteUint16(16, (referenceAddress))
+		_referenceAddressErr := io.WriteUint16("referenceAddress", 16, (referenceAddress))
 		if _referenceAddressErr != nil {
-			return errors.New("Error serializing 'referenceAddress' field " + _referenceAddressErr.Error())
+			return errors.Wrap(_referenceAddressErr, "Error serializing 'referenceAddress' field")
 		}
 
 		// Simple Field (andMask)
 		andMask := uint16(m.AndMask)
-		_andMaskErr := io.WriteUint16(16, (andMask))
+		_andMaskErr := io.WriteUint16("andMask", 16, (andMask))
 		if _andMaskErr != nil {
-			return errors.New("Error serializing 'andMask' field " + _andMaskErr.Error())
+			return errors.Wrap(_andMaskErr, "Error serializing 'andMask' field")
 		}
 
 		// Simple Field (orMask)
 		orMask := uint16(m.OrMask)
-		_orMaskErr := io.WriteUint16(16, (orMask))
+		_orMaskErr := io.WriteUint16("orMask", 16, (orMask))
 		if _orMaskErr != nil {
-			return errors.New("Error serializing 'orMask' field " + _orMaskErr.Error())
+			return errors.Wrap(_orMaskErr, "Error serializing 'orMask' field")
 		}
 
+		io.PopContext("ModbusPDUMaskWriteHoldingRegisterResponse")
 		return nil
 	}
 	return m.Parent.SerializeParent(io, m, ser)
@@ -177,10 +185,12 @@ func (m *ModbusPDUMaskWriteHoldingRegisterResponse) Serialize(io utils.WriteBuff
 func (m *ModbusPDUMaskWriteHoldingRegisterResponse) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
 	var token xml.Token
 	var err error
+	foundContent := false
 	token = start
 	for {
 		switch token.(type) {
 		case xml.StartElement:
+			foundContent = true
 			tok := token.(xml.StartElement)
 			switch tok.Name.Local {
 			case "referenceAddress":
@@ -205,7 +215,7 @@ func (m *ModbusPDUMaskWriteHoldingRegisterResponse) UnmarshalXML(d *xml.Decoder,
 		}
 		token, err = d.Token()
 		if err != nil {
-			if err == io.EOF {
+			if err == io.EOF && foundContent {
 				return nil
 			}
 			return err
@@ -224,4 +234,29 @@ func (m *ModbusPDUMaskWriteHoldingRegisterResponse) MarshalXML(e *xml.Encoder, s
 		return err
 	}
 	return nil
+}
+
+func (m ModbusPDUMaskWriteHoldingRegisterResponse) String() string {
+	return string(m.Box("", 120))
+}
+
+func (m ModbusPDUMaskWriteHoldingRegisterResponse) Box(name string, width int) utils.AsciiBox {
+	boxName := "ModbusPDUMaskWriteHoldingRegisterResponse"
+	if name != "" {
+		boxName += "/" + name
+	}
+	childBoxer := func() []utils.AsciiBox {
+		boxes := make([]utils.AsciiBox, 0)
+		// Simple field (case simple)
+		// uint16 can be boxed as anything with the least amount of space
+		boxes = append(boxes, utils.BoxAnything("ReferenceAddress", m.ReferenceAddress, -1))
+		// Simple field (case simple)
+		// uint16 can be boxed as anything with the least amount of space
+		boxes = append(boxes, utils.BoxAnything("AndMask", m.AndMask, -1))
+		// Simple field (case simple)
+		// uint16 can be boxed as anything with the least amount of space
+		boxes = append(boxes, utils.BoxAnything("OrMask", m.OrMask, -1))
+		return boxes
+	}
+	return m.Parent.BoxParent(boxName, width, childBoxer)
 }

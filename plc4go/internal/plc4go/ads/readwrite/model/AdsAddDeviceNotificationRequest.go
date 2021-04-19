@@ -16,12 +16,13 @@
 // specific language governing permissions and limitations
 // under the License.
 //
+
 package model
 
 import (
 	"encoding/xml"
-	"errors"
 	"github.com/apache/plc4x/plc4go/internal/plc4go/spi/utils"
+	"github.com/pkg/errors"
 	"github.com/rs/zerolog/log"
 	"io"
 	"math/big"
@@ -46,6 +47,7 @@ type IAdsAddDeviceNotificationRequest interface {
 	LengthInBits() uint16
 	Serialize(io utils.WriteBuffer) error
 	xml.Marshaler
+	xml.Unmarshaler
 }
 
 ///////////////////////////////////////////////////////////
@@ -100,7 +102,11 @@ func (m *AdsAddDeviceNotificationRequest) GetTypeName() string {
 }
 
 func (m *AdsAddDeviceNotificationRequest) LengthInBits() uint16 {
-	lengthInBits := uint16(0)
+	return m.LengthInBitsConditional(false)
+}
+
+func (m *AdsAddDeviceNotificationRequest) LengthInBitsConditional(lastItem bool) uint16 {
+	lengthInBits := uint16(m.Parent.ParentLengthInBits())
 
 	// Simple field (indexGroup)
 	lengthInBits += 32
@@ -130,49 +136,49 @@ func (m *AdsAddDeviceNotificationRequest) LengthInBytes() uint16 {
 	return m.LengthInBits() / 8
 }
 
-func AdsAddDeviceNotificationRequestParse(io *utils.ReadBuffer) (*AdsData, error) {
+func AdsAddDeviceNotificationRequestParse(io utils.ReadBuffer) (*AdsData, error) {
 
 	// Simple Field (indexGroup)
 	indexGroup, _indexGroupErr := io.ReadUint32(32)
 	if _indexGroupErr != nil {
-		return nil, errors.New("Error parsing 'indexGroup' field " + _indexGroupErr.Error())
+		return nil, errors.Wrap(_indexGroupErr, "Error parsing 'indexGroup' field")
 	}
 
 	// Simple Field (indexOffset)
 	indexOffset, _indexOffsetErr := io.ReadUint32(32)
 	if _indexOffsetErr != nil {
-		return nil, errors.New("Error parsing 'indexOffset' field " + _indexOffsetErr.Error())
+		return nil, errors.Wrap(_indexOffsetErr, "Error parsing 'indexOffset' field")
 	}
 
 	// Simple Field (length)
 	length, _lengthErr := io.ReadUint32(32)
 	if _lengthErr != nil {
-		return nil, errors.New("Error parsing 'length' field " + _lengthErr.Error())
+		return nil, errors.Wrap(_lengthErr, "Error parsing 'length' field")
 	}
 
 	// Simple Field (transmissionMode)
 	transmissionMode, _transmissionModeErr := io.ReadUint32(32)
 	if _transmissionModeErr != nil {
-		return nil, errors.New("Error parsing 'transmissionMode' field " + _transmissionModeErr.Error())
+		return nil, errors.Wrap(_transmissionModeErr, "Error parsing 'transmissionMode' field")
 	}
 
 	// Simple Field (maxDelay)
 	maxDelay, _maxDelayErr := io.ReadUint32(32)
 	if _maxDelayErr != nil {
-		return nil, errors.New("Error parsing 'maxDelay' field " + _maxDelayErr.Error())
+		return nil, errors.Wrap(_maxDelayErr, "Error parsing 'maxDelay' field")
 	}
 
 	// Simple Field (cycleTime)
 	cycleTime, _cycleTimeErr := io.ReadUint32(32)
 	if _cycleTimeErr != nil {
-		return nil, errors.New("Error parsing 'cycleTime' field " + _cycleTimeErr.Error())
+		return nil, errors.Wrap(_cycleTimeErr, "Error parsing 'cycleTime' field")
 	}
 
 	// Reserved Field (Compartmentalized so the "reserved" variable can't leak)
 	{
 		reserved, _err := io.ReadBigInt(128)
 		if _err != nil {
-			return nil, errors.New("Error parsing 'reserved' field " + _err.Error())
+			return nil, errors.Wrap(_err, "Error parsing 'reserved' field")
 		}
 		if reserved.Cmp(big.NewInt(0x0000)) != 0 {
 			log.Info().Fields(map[string]interface{}{
@@ -198,57 +204,59 @@ func AdsAddDeviceNotificationRequestParse(io *utils.ReadBuffer) (*AdsData, error
 
 func (m *AdsAddDeviceNotificationRequest) Serialize(io utils.WriteBuffer) error {
 	ser := func() error {
+		io.PushContext("AdsAddDeviceNotificationRequest")
 
 		// Simple Field (indexGroup)
 		indexGroup := uint32(m.IndexGroup)
-		_indexGroupErr := io.WriteUint32(32, (indexGroup))
+		_indexGroupErr := io.WriteUint32("indexGroup", 32, (indexGroup))
 		if _indexGroupErr != nil {
-			return errors.New("Error serializing 'indexGroup' field " + _indexGroupErr.Error())
+			return errors.Wrap(_indexGroupErr, "Error serializing 'indexGroup' field")
 		}
 
 		// Simple Field (indexOffset)
 		indexOffset := uint32(m.IndexOffset)
-		_indexOffsetErr := io.WriteUint32(32, (indexOffset))
+		_indexOffsetErr := io.WriteUint32("indexOffset", 32, (indexOffset))
 		if _indexOffsetErr != nil {
-			return errors.New("Error serializing 'indexOffset' field " + _indexOffsetErr.Error())
+			return errors.Wrap(_indexOffsetErr, "Error serializing 'indexOffset' field")
 		}
 
 		// Simple Field (length)
 		length := uint32(m.Length)
-		_lengthErr := io.WriteUint32(32, (length))
+		_lengthErr := io.WriteUint32("length", 32, (length))
 		if _lengthErr != nil {
-			return errors.New("Error serializing 'length' field " + _lengthErr.Error())
+			return errors.Wrap(_lengthErr, "Error serializing 'length' field")
 		}
 
 		// Simple Field (transmissionMode)
 		transmissionMode := uint32(m.TransmissionMode)
-		_transmissionModeErr := io.WriteUint32(32, (transmissionMode))
+		_transmissionModeErr := io.WriteUint32("transmissionMode", 32, (transmissionMode))
 		if _transmissionModeErr != nil {
-			return errors.New("Error serializing 'transmissionMode' field " + _transmissionModeErr.Error())
+			return errors.Wrap(_transmissionModeErr, "Error serializing 'transmissionMode' field")
 		}
 
 		// Simple Field (maxDelay)
 		maxDelay := uint32(m.MaxDelay)
-		_maxDelayErr := io.WriteUint32(32, (maxDelay))
+		_maxDelayErr := io.WriteUint32("maxDelay", 32, (maxDelay))
 		if _maxDelayErr != nil {
-			return errors.New("Error serializing 'maxDelay' field " + _maxDelayErr.Error())
+			return errors.Wrap(_maxDelayErr, "Error serializing 'maxDelay' field")
 		}
 
 		// Simple Field (cycleTime)
 		cycleTime := uint32(m.CycleTime)
-		_cycleTimeErr := io.WriteUint32(32, (cycleTime))
+		_cycleTimeErr := io.WriteUint32("cycleTime", 32, (cycleTime))
 		if _cycleTimeErr != nil {
-			return errors.New("Error serializing 'cycleTime' field " + _cycleTimeErr.Error())
+			return errors.Wrap(_cycleTimeErr, "Error serializing 'cycleTime' field")
 		}
 
 		// Reserved Field (reserved)
 		{
-			_err := io.WriteBigInt(128, big.NewInt(0x0000))
+			_err := io.WriteBigInt("reserved", 128, big.NewInt(0x0000))
 			if _err != nil {
-				return errors.New("Error serializing 'reserved' field " + _err.Error())
+				return errors.Wrap(_err, "Error serializing 'reserved' field")
 			}
 		}
 
+		io.PopContext("AdsAddDeviceNotificationRequest")
 		return nil
 	}
 	return m.Parent.SerializeParent(io, m, ser)
@@ -257,10 +265,12 @@ func (m *AdsAddDeviceNotificationRequest) Serialize(io utils.WriteBuffer) error 
 func (m *AdsAddDeviceNotificationRequest) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
 	var token xml.Token
 	var err error
+	foundContent := false
 	token = start
 	for {
 		switch token.(type) {
 		case xml.StartElement:
+			foundContent = true
 			tok := token.(xml.StartElement)
 			switch tok.Name.Local {
 			case "indexGroup":
@@ -303,7 +313,7 @@ func (m *AdsAddDeviceNotificationRequest) UnmarshalXML(d *xml.Decoder, start xml
 		}
 		token, err = d.Token()
 		if err != nil {
-			if err == io.EOF {
+			if err == io.EOF && foundContent {
 				return nil
 			}
 			return err
@@ -331,4 +341,41 @@ func (m *AdsAddDeviceNotificationRequest) MarshalXML(e *xml.Encoder, start xml.S
 		return err
 	}
 	return nil
+}
+
+func (m AdsAddDeviceNotificationRequest) String() string {
+	return string(m.Box("", 120))
+}
+
+func (m AdsAddDeviceNotificationRequest) Box(name string, width int) utils.AsciiBox {
+	boxName := "AdsAddDeviceNotificationRequest"
+	if name != "" {
+		boxName += "/" + name
+	}
+	childBoxer := func() []utils.AsciiBox {
+		boxes := make([]utils.AsciiBox, 0)
+		// Simple field (case simple)
+		// uint32 can be boxed as anything with the least amount of space
+		boxes = append(boxes, utils.BoxAnything("IndexGroup", m.IndexGroup, -1))
+		// Simple field (case simple)
+		// uint32 can be boxed as anything with the least amount of space
+		boxes = append(boxes, utils.BoxAnything("IndexOffset", m.IndexOffset, -1))
+		// Simple field (case simple)
+		// uint32 can be boxed as anything with the least amount of space
+		boxes = append(boxes, utils.BoxAnything("Length", m.Length, -1))
+		// Simple field (case simple)
+		// uint32 can be boxed as anything with the least amount of space
+		boxes = append(boxes, utils.BoxAnything("TransmissionMode", m.TransmissionMode, -1))
+		// Simple field (case simple)
+		// uint32 can be boxed as anything with the least amount of space
+		boxes = append(boxes, utils.BoxAnything("MaxDelay", m.MaxDelay, -1))
+		// Simple field (case simple)
+		// uint32 can be boxed as anything with the least amount of space
+		boxes = append(boxes, utils.BoxAnything("CycleTime", m.CycleTime, -1))
+		// Reserved Field (reserved)
+		// reserved field can be boxed as anything with the least amount of space
+		boxes = append(boxes, utils.BoxAnything("reserved", big.NewInt(0x0000), -1))
+		return boxes
+	}
+	return m.Parent.BoxParent(boxName, width, childBoxer)
 }

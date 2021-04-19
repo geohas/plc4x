@@ -16,16 +16,17 @@
 // specific language governing permissions and limitations
 // under the License.
 //
+
 package modbus
 
 import (
-	"errors"
-	"fmt"
 	readWriteModel "github.com/apache/plc4x/plc4go/internal/plc4go/modbus/readwrite/model"
 	"github.com/apache/plc4x/plc4go/internal/plc4go/spi"
 	plc4goModel "github.com/apache/plc4x/plc4go/internal/plc4go/spi/model"
 	"github.com/apache/plc4x/plc4go/internal/plc4go/spi/utils"
 	"github.com/apache/plc4x/plc4go/pkg/plc4go/model"
+	"github.com/pkg/errors"
+	"github.com/rs/zerolog/log"
 	"math"
 	"sync/atomic"
 	"time"
@@ -47,8 +48,16 @@ func NewWriter(unitIdentifier uint8, messageCodec spi.MessageCodec) Writer {
 
 func (m Writer) Write(writeRequest model.PlcWriteRequest) <-chan model.PlcWriteRequestResult {
 	result := make(chan model.PlcWriteRequestResult)
-	// If we are requesting only one field, use a
-	if len(writeRequest.GetFieldNames()) == 1 {
+	go func() {
+		// If we are requesting only one field, use a
+		if len(writeRequest.GetFieldNames()) != 1 {
+			result <- model.PlcWriteRequestResult{
+				Request:  writeRequest,
+				Response: nil,
+				Err:      errors.New("modbus only supports single-item requests"),
+			}
+			return
+		}
 		fieldName := writeRequest.GetFieldNames()[0]
 
 		// Get the modbus field instance from the request
@@ -58,9 +67,9 @@ func (m Writer) Write(writeRequest model.PlcWriteRequest) <-chan model.PlcWriteR
 			result <- model.PlcWriteRequestResult{
 				Request:  writeRequest,
 				Response: nil,
-				Err:      errors.New("invalid field item type"),
+				Err:      errors.Wrap(err, "invalid field item type"),
 			}
-			return result
+			return
 		}
 
 		// Get the value from the request and serialize it to a byte array
@@ -70,9 +79,9 @@ func (m Writer) Write(writeRequest model.PlcWriteRequest) <-chan model.PlcWriteR
 			result <- model.PlcWriteRequestResult{
 				Request:  writeRequest,
 				Response: nil,
-				Err:      errors.New("error serializing value: " + err.Error()),
+				Err:      errors.Wrap(err, "error serializing value"),
 			}
-			return result
+			return
 		}
 		data := utils.Uint8ArrayToInt8Array(io.GetBytes())
 
@@ -97,14 +106,14 @@ func (m Writer) Write(writeRequest model.PlcWriteRequest) <-chan model.PlcWriteR
 				Response: nil,
 				Err:      errors.New("modbus currently doesn't support extended register requests"),
 			}
-			return result
+			return
 		default:
 			result <- model.PlcWriteRequestResult{
 				Request:  writeRequest,
 				Response: nil,
 				Err:      errors.New("unsupported field type"),
 			}
-			return result
+			return
 		}
 
 		// Calculate a new unit identifier
@@ -138,7 +147,7 @@ func (m Writer) Write(writeRequest model.PlcWriteRequest) <-chan model.PlcWriteR
 				if err != nil {
 					result <- model.PlcWriteRequestResult{
 						Request: writeRequest,
-						Err:     errors.New("Error decoding response: " + err.Error()),
+						Err:     errors.Wrap(err, "Error decoding response"),
 					}
 				} else {
 					result <- model.PlcWriteRequestResult{
@@ -156,14 +165,7 @@ func (m Writer) Write(writeRequest model.PlcWriteRequest) <-chan model.PlcWriteR
 				return nil
 			},
 			time.Second*1)
-	} else {
-		result <- model.PlcWriteRequestResult{
-			Request:  writeRequest,
-			Response: nil,
-			Err:      errors.New("modbus only supports single-item requests"),
-		}
-	}
-	fmt.Printf("Write Request %s", writeRequest)
+	}()
 	return result
 }
 
@@ -171,6 +173,7 @@ func (m Writer) ToPlc4xWriteResponse(requestAdu readWriteModel.ModbusTcpADU, res
 	responseCodes := map[string]model.PlcResponseCode{}
 	fieldName := writeRequest.GetFieldNames()[0]
 
+	// we default to an error until its proven wrong
 	responseCodes[fieldName] = model.PlcResponseCode_INTERNAL_ERROR
 	switch responseAdu.Pdu.Child.(type) {
 	case *readWriteModel.ModbusPDUWriteMultipleCoilsResponse:
@@ -208,9 +211,14 @@ func (m Writer) ToPlc4xWriteResponse(requestAdu readWriteModel.ModbusTcpADU, res
 			responseCodes[fieldName] = model.PlcResponseCode_INTERNAL_ERROR
 		case readWriteModel.ModbusErrorCode_GATEWAY_TARGET_DEVICE_FAILED_TO_RESPOND:
 			responseCodes[fieldName] = model.PlcResponseCode_REMOTE_ERROR
+		default:
+			log.Debug().Msgf("Unmapped exception code %x", resp.ExceptionCode)
 		}
+	default:
+		return nil, errors.Errorf("unsupported response type %T", responseAdu.Pdu.Child)
 	}
 
 	// Return the response
+	log.Trace().Msg("Returning the response")
 	return plc4goModel.NewDefaultPlcWriteResponse(writeRequest, responseCodes), nil
 }

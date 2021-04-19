@@ -16,12 +16,13 @@
 // specific language governing permissions and limitations
 // under the License.
 //
+
 package model
 
 import (
 	"encoding/xml"
-	"errors"
 	"github.com/apache/plc4x/plc4go/internal/plc4go/spi/utils"
+	"github.com/pkg/errors"
 	"io"
 )
 
@@ -40,6 +41,7 @@ type ICOTPPacketDisconnectResponse interface {
 	LengthInBits() uint16
 	Serialize(io utils.WriteBuffer) error
 	xml.Marshaler
+	xml.Unmarshaler
 }
 
 ///////////////////////////////////////////////////////////
@@ -88,7 +90,11 @@ func (m *COTPPacketDisconnectResponse) GetTypeName() string {
 }
 
 func (m *COTPPacketDisconnectResponse) LengthInBits() uint16 {
-	lengthInBits := uint16(0)
+	return m.LengthInBitsConditional(false)
+}
+
+func (m *COTPPacketDisconnectResponse) LengthInBitsConditional(lastItem bool) uint16 {
+	lengthInBits := uint16(m.Parent.ParentLengthInBits())
 
 	// Simple field (destinationReference)
 	lengthInBits += 16
@@ -103,18 +109,18 @@ func (m *COTPPacketDisconnectResponse) LengthInBytes() uint16 {
 	return m.LengthInBits() / 8
 }
 
-func COTPPacketDisconnectResponseParse(io *utils.ReadBuffer) (*COTPPacket, error) {
+func COTPPacketDisconnectResponseParse(io utils.ReadBuffer) (*COTPPacket, error) {
 
 	// Simple Field (destinationReference)
 	destinationReference, _destinationReferenceErr := io.ReadUint16(16)
 	if _destinationReferenceErr != nil {
-		return nil, errors.New("Error parsing 'destinationReference' field " + _destinationReferenceErr.Error())
+		return nil, errors.Wrap(_destinationReferenceErr, "Error parsing 'destinationReference' field")
 	}
 
 	// Simple Field (sourceReference)
 	sourceReference, _sourceReferenceErr := io.ReadUint16(16)
 	if _sourceReferenceErr != nil {
-		return nil, errors.New("Error parsing 'sourceReference' field " + _sourceReferenceErr.Error())
+		return nil, errors.Wrap(_sourceReferenceErr, "Error parsing 'sourceReference' field")
 	}
 
 	// Create a partially initialized instance
@@ -129,21 +135,23 @@ func COTPPacketDisconnectResponseParse(io *utils.ReadBuffer) (*COTPPacket, error
 
 func (m *COTPPacketDisconnectResponse) Serialize(io utils.WriteBuffer) error {
 	ser := func() error {
+		io.PushContext("COTPPacketDisconnectResponse")
 
 		// Simple Field (destinationReference)
 		destinationReference := uint16(m.DestinationReference)
-		_destinationReferenceErr := io.WriteUint16(16, (destinationReference))
+		_destinationReferenceErr := io.WriteUint16("destinationReference", 16, (destinationReference))
 		if _destinationReferenceErr != nil {
-			return errors.New("Error serializing 'destinationReference' field " + _destinationReferenceErr.Error())
+			return errors.Wrap(_destinationReferenceErr, "Error serializing 'destinationReference' field")
 		}
 
 		// Simple Field (sourceReference)
 		sourceReference := uint16(m.SourceReference)
-		_sourceReferenceErr := io.WriteUint16(16, (sourceReference))
+		_sourceReferenceErr := io.WriteUint16("sourceReference", 16, (sourceReference))
 		if _sourceReferenceErr != nil {
-			return errors.New("Error serializing 'sourceReference' field " + _sourceReferenceErr.Error())
+			return errors.Wrap(_sourceReferenceErr, "Error serializing 'sourceReference' field")
 		}
 
+		io.PopContext("COTPPacketDisconnectResponse")
 		return nil
 	}
 	return m.Parent.SerializeParent(io, m, ser)
@@ -152,10 +160,12 @@ func (m *COTPPacketDisconnectResponse) Serialize(io utils.WriteBuffer) error {
 func (m *COTPPacketDisconnectResponse) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
 	var token xml.Token
 	var err error
+	foundContent := false
 	token = start
 	for {
 		switch token.(type) {
 		case xml.StartElement:
+			foundContent = true
 			tok := token.(xml.StartElement)
 			switch tok.Name.Local {
 			case "destinationReference":
@@ -174,7 +184,7 @@ func (m *COTPPacketDisconnectResponse) UnmarshalXML(d *xml.Decoder, start xml.St
 		}
 		token, err = d.Token()
 		if err != nil {
-			if err == io.EOF {
+			if err == io.EOF && foundContent {
 				return nil
 			}
 			return err
@@ -190,4 +200,26 @@ func (m *COTPPacketDisconnectResponse) MarshalXML(e *xml.Encoder, start xml.Star
 		return err
 	}
 	return nil
+}
+
+func (m COTPPacketDisconnectResponse) String() string {
+	return string(m.Box("", 120))
+}
+
+func (m COTPPacketDisconnectResponse) Box(name string, width int) utils.AsciiBox {
+	boxName := "COTPPacketDisconnectResponse"
+	if name != "" {
+		boxName += "/" + name
+	}
+	childBoxer := func() []utils.AsciiBox {
+		boxes := make([]utils.AsciiBox, 0)
+		// Simple field (case simple)
+		// uint16 can be boxed as anything with the least amount of space
+		boxes = append(boxes, utils.BoxAnything("DestinationReference", m.DestinationReference, -1))
+		// Simple field (case simple)
+		// uint16 can be boxed as anything with the least amount of space
+		boxes = append(boxes, utils.BoxAnything("SourceReference", m.SourceReference, -1))
+		return boxes
+	}
+	return m.Parent.BoxParent(boxName, width, childBoxer)
 }

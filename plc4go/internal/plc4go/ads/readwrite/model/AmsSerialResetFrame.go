@@ -16,12 +16,13 @@
 // specific language governing permissions and limitations
 // under the License.
 //
+
 package model
 
 import (
 	"encoding/xml"
-	"errors"
 	"github.com/apache/plc4x/plc4go/internal/plc4go/spi/utils"
+	"github.com/pkg/errors"
 	"io"
 )
 
@@ -43,6 +44,7 @@ type IAmsSerialResetFrame interface {
 	LengthInBits() uint16
 	Serialize(io utils.WriteBuffer) error
 	xml.Marshaler
+	xml.Unmarshaler
 }
 
 func NewAmsSerialResetFrame(magicCookie uint16, transmitterAddress int8, receiverAddress int8, fragmentNumber int8, length int8, crc uint16) *AmsSerialResetFrame {
@@ -67,6 +69,10 @@ func (m *AmsSerialResetFrame) GetTypeName() string {
 }
 
 func (m *AmsSerialResetFrame) LengthInBits() uint16 {
+	return m.LengthInBitsConditional(false)
+}
+
+func (m *AmsSerialResetFrame) LengthInBitsConditional(lastItem bool) uint16 {
 	lengthInBits := uint16(0)
 
 	// Simple field (magicCookie)
@@ -94,42 +100,42 @@ func (m *AmsSerialResetFrame) LengthInBytes() uint16 {
 	return m.LengthInBits() / 8
 }
 
-func AmsSerialResetFrameParse(io *utils.ReadBuffer) (*AmsSerialResetFrame, error) {
+func AmsSerialResetFrameParse(io utils.ReadBuffer) (*AmsSerialResetFrame, error) {
 
 	// Simple Field (magicCookie)
 	magicCookie, _magicCookieErr := io.ReadUint16(16)
 	if _magicCookieErr != nil {
-		return nil, errors.New("Error parsing 'magicCookie' field " + _magicCookieErr.Error())
+		return nil, errors.Wrap(_magicCookieErr, "Error parsing 'magicCookie' field")
 	}
 
 	// Simple Field (transmitterAddress)
 	transmitterAddress, _transmitterAddressErr := io.ReadInt8(8)
 	if _transmitterAddressErr != nil {
-		return nil, errors.New("Error parsing 'transmitterAddress' field " + _transmitterAddressErr.Error())
+		return nil, errors.Wrap(_transmitterAddressErr, "Error parsing 'transmitterAddress' field")
 	}
 
 	// Simple Field (receiverAddress)
 	receiverAddress, _receiverAddressErr := io.ReadInt8(8)
 	if _receiverAddressErr != nil {
-		return nil, errors.New("Error parsing 'receiverAddress' field " + _receiverAddressErr.Error())
+		return nil, errors.Wrap(_receiverAddressErr, "Error parsing 'receiverAddress' field")
 	}
 
 	// Simple Field (fragmentNumber)
 	fragmentNumber, _fragmentNumberErr := io.ReadInt8(8)
 	if _fragmentNumberErr != nil {
-		return nil, errors.New("Error parsing 'fragmentNumber' field " + _fragmentNumberErr.Error())
+		return nil, errors.Wrap(_fragmentNumberErr, "Error parsing 'fragmentNumber' field")
 	}
 
 	// Simple Field (length)
 	length, _lengthErr := io.ReadInt8(8)
 	if _lengthErr != nil {
-		return nil, errors.New("Error parsing 'length' field " + _lengthErr.Error())
+		return nil, errors.Wrap(_lengthErr, "Error parsing 'length' field")
 	}
 
 	// Simple Field (crc)
 	crc, _crcErr := io.ReadUint16(16)
 	if _crcErr != nil {
-		return nil, errors.New("Error parsing 'crc' field " + _crcErr.Error())
+		return nil, errors.Wrap(_crcErr, "Error parsing 'crc' field")
 	}
 
 	// Create the instance
@@ -137,65 +143,69 @@ func AmsSerialResetFrameParse(io *utils.ReadBuffer) (*AmsSerialResetFrame, error
 }
 
 func (m *AmsSerialResetFrame) Serialize(io utils.WriteBuffer) error {
+	io.PushContext("AmsSerialResetFrame")
 
 	// Simple Field (magicCookie)
 	magicCookie := uint16(m.MagicCookie)
-	_magicCookieErr := io.WriteUint16(16, (magicCookie))
+	_magicCookieErr := io.WriteUint16("magicCookie", 16, (magicCookie))
 	if _magicCookieErr != nil {
-		return errors.New("Error serializing 'magicCookie' field " + _magicCookieErr.Error())
+		return errors.Wrap(_magicCookieErr, "Error serializing 'magicCookie' field")
 	}
 
 	// Simple Field (transmitterAddress)
 	transmitterAddress := int8(m.TransmitterAddress)
-	_transmitterAddressErr := io.WriteInt8(8, (transmitterAddress))
+	_transmitterAddressErr := io.WriteInt8("transmitterAddress", 8, (transmitterAddress))
 	if _transmitterAddressErr != nil {
-		return errors.New("Error serializing 'transmitterAddress' field " + _transmitterAddressErr.Error())
+		return errors.Wrap(_transmitterAddressErr, "Error serializing 'transmitterAddress' field")
 	}
 
 	// Simple Field (receiverAddress)
 	receiverAddress := int8(m.ReceiverAddress)
-	_receiverAddressErr := io.WriteInt8(8, (receiverAddress))
+	_receiverAddressErr := io.WriteInt8("receiverAddress", 8, (receiverAddress))
 	if _receiverAddressErr != nil {
-		return errors.New("Error serializing 'receiverAddress' field " + _receiverAddressErr.Error())
+		return errors.Wrap(_receiverAddressErr, "Error serializing 'receiverAddress' field")
 	}
 
 	// Simple Field (fragmentNumber)
 	fragmentNumber := int8(m.FragmentNumber)
-	_fragmentNumberErr := io.WriteInt8(8, (fragmentNumber))
+	_fragmentNumberErr := io.WriteInt8("fragmentNumber", 8, (fragmentNumber))
 	if _fragmentNumberErr != nil {
-		return errors.New("Error serializing 'fragmentNumber' field " + _fragmentNumberErr.Error())
+		return errors.Wrap(_fragmentNumberErr, "Error serializing 'fragmentNumber' field")
 	}
 
 	// Simple Field (length)
 	length := int8(m.Length)
-	_lengthErr := io.WriteInt8(8, (length))
+	_lengthErr := io.WriteInt8("length", 8, (length))
 	if _lengthErr != nil {
-		return errors.New("Error serializing 'length' field " + _lengthErr.Error())
+		return errors.Wrap(_lengthErr, "Error serializing 'length' field")
 	}
 
 	// Simple Field (crc)
 	crc := uint16(m.Crc)
-	_crcErr := io.WriteUint16(16, (crc))
+	_crcErr := io.WriteUint16("crc", 16, (crc))
 	if _crcErr != nil {
-		return errors.New("Error serializing 'crc' field " + _crcErr.Error())
+		return errors.Wrap(_crcErr, "Error serializing 'crc' field")
 	}
 
+	io.PopContext("AmsSerialResetFrame")
 	return nil
 }
 
 func (m *AmsSerialResetFrame) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
 	var token xml.Token
 	var err error
+	foundContent := false
 	for {
 		token, err = d.Token()
 		if err != nil {
-			if err == io.EOF {
+			if err == io.EOF && foundContent {
 				return nil
 			}
 			return err
 		}
 		switch token.(type) {
 		case xml.StartElement:
+			foundContent = true
 			tok := token.(xml.StartElement)
 			switch tok.Name.Local {
 			case "magicCookie":
@@ -268,4 +278,35 @@ func (m *AmsSerialResetFrame) MarshalXML(e *xml.Encoder, start xml.StartElement)
 		return err
 	}
 	return nil
+}
+
+func (m AmsSerialResetFrame) String() string {
+	return string(m.Box("", 120))
+}
+
+func (m AmsSerialResetFrame) Box(name string, width int) utils.AsciiBox {
+	boxName := "AmsSerialResetFrame"
+	if name != "" {
+		boxName += "/" + name
+	}
+	boxes := make([]utils.AsciiBox, 0)
+	// Simple field (case simple)
+	// uint16 can be boxed as anything with the least amount of space
+	boxes = append(boxes, utils.BoxAnything("MagicCookie", m.MagicCookie, -1))
+	// Simple field (case simple)
+	// int8 can be boxed as anything with the least amount of space
+	boxes = append(boxes, utils.BoxAnything("TransmitterAddress", m.TransmitterAddress, -1))
+	// Simple field (case simple)
+	// int8 can be boxed as anything with the least amount of space
+	boxes = append(boxes, utils.BoxAnything("ReceiverAddress", m.ReceiverAddress, -1))
+	// Simple field (case simple)
+	// int8 can be boxed as anything with the least amount of space
+	boxes = append(boxes, utils.BoxAnything("FragmentNumber", m.FragmentNumber, -1))
+	// Simple field (case simple)
+	// int8 can be boxed as anything with the least amount of space
+	boxes = append(boxes, utils.BoxAnything("Length", m.Length, -1))
+	// Simple field (case simple)
+	// uint16 can be boxed as anything with the least amount of space
+	boxes = append(boxes, utils.BoxAnything("Crc", m.Crc, -1))
+	return utils.BoxBox(boxName, utils.AlignBoxes(boxes, width-2), 0)
 }

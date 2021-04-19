@@ -16,12 +16,13 @@
 // specific language governing permissions and limitations
 // under the License.
 //
+
 package model
 
 import (
 	"encoding/xml"
-	"errors"
 	"github.com/apache/plc4x/plc4go/internal/plc4go/spi/utils"
+	"github.com/pkg/errors"
 	"io"
 )
 
@@ -39,6 +40,7 @@ type IAdsDeleteDeviceNotificationResponse interface {
 	LengthInBits() uint16
 	Serialize(io utils.WriteBuffer) error
 	xml.Marshaler
+	xml.Unmarshaler
 }
 
 ///////////////////////////////////////////////////////////
@@ -88,7 +90,11 @@ func (m *AdsDeleteDeviceNotificationResponse) GetTypeName() string {
 }
 
 func (m *AdsDeleteDeviceNotificationResponse) LengthInBits() uint16 {
-	lengthInBits := uint16(0)
+	return m.LengthInBitsConditional(false)
+}
+
+func (m *AdsDeleteDeviceNotificationResponse) LengthInBitsConditional(lastItem bool) uint16 {
+	lengthInBits := uint16(m.Parent.ParentLengthInBits())
 
 	// Simple field (result)
 	lengthInBits += 32
@@ -100,12 +106,12 @@ func (m *AdsDeleteDeviceNotificationResponse) LengthInBytes() uint16 {
 	return m.LengthInBits() / 8
 }
 
-func AdsDeleteDeviceNotificationResponseParse(io *utils.ReadBuffer) (*AdsData, error) {
+func AdsDeleteDeviceNotificationResponseParse(io utils.ReadBuffer) (*AdsData, error) {
 
 	// Simple Field (result)
 	result, _resultErr := ReturnCodeParse(io)
 	if _resultErr != nil {
-		return nil, errors.New("Error parsing 'result' field " + _resultErr.Error())
+		return nil, errors.Wrap(_resultErr, "Error parsing 'result' field")
 	}
 
 	// Create a partially initialized instance
@@ -119,13 +125,15 @@ func AdsDeleteDeviceNotificationResponseParse(io *utils.ReadBuffer) (*AdsData, e
 
 func (m *AdsDeleteDeviceNotificationResponse) Serialize(io utils.WriteBuffer) error {
 	ser := func() error {
+		io.PushContext("AdsDeleteDeviceNotificationResponse")
 
 		// Simple Field (result)
 		_resultErr := m.Result.Serialize(io)
 		if _resultErr != nil {
-			return errors.New("Error serializing 'result' field " + _resultErr.Error())
+			return errors.Wrap(_resultErr, "Error serializing 'result' field")
 		}
 
+		io.PopContext("AdsDeleteDeviceNotificationResponse")
 		return nil
 	}
 	return m.Parent.SerializeParent(io, m, ser)
@@ -134,10 +142,12 @@ func (m *AdsDeleteDeviceNotificationResponse) Serialize(io utils.WriteBuffer) er
 func (m *AdsDeleteDeviceNotificationResponse) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
 	var token xml.Token
 	var err error
+	foundContent := false
 	token = start
 	for {
 		switch token.(type) {
 		case xml.StartElement:
+			foundContent = true
 			tok := token.(xml.StartElement)
 			switch tok.Name.Local {
 			case "result":
@@ -150,7 +160,7 @@ func (m *AdsDeleteDeviceNotificationResponse) UnmarshalXML(d *xml.Decoder, start
 		}
 		token, err = d.Token()
 		if err != nil {
-			if err == io.EOF {
+			if err == io.EOF && foundContent {
 				return nil
 			}
 			return err
@@ -163,4 +173,22 @@ func (m *AdsDeleteDeviceNotificationResponse) MarshalXML(e *xml.Encoder, start x
 		return err
 	}
 	return nil
+}
+
+func (m AdsDeleteDeviceNotificationResponse) String() string {
+	return string(m.Box("", 120))
+}
+
+func (m AdsDeleteDeviceNotificationResponse) Box(name string, width int) utils.AsciiBox {
+	boxName := "AdsDeleteDeviceNotificationResponse"
+	if name != "" {
+		boxName += "/" + name
+	}
+	childBoxer := func() []utils.AsciiBox {
+		boxes := make([]utils.AsciiBox, 0)
+		// Complex field (case complex)
+		boxes = append(boxes, m.Result.Box("result", width-2))
+		return boxes
+	}
+	return m.Parent.BoxParent(boxName, width, childBoxer)
 }

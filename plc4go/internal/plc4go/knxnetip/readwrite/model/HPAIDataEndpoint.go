@@ -16,12 +16,13 @@
 // specific language governing permissions and limitations
 // under the License.
 //
+
 package model
 
 import (
 	"encoding/xml"
-	"errors"
 	"github.com/apache/plc4x/plc4go/internal/plc4go/spi/utils"
+	"github.com/pkg/errors"
 	"io"
 )
 
@@ -40,6 +41,7 @@ type IHPAIDataEndpoint interface {
 	LengthInBits() uint16
 	Serialize(io utils.WriteBuffer) error
 	xml.Marshaler
+	xml.Unmarshaler
 }
 
 func NewHPAIDataEndpoint(hostProtocolCode HostProtocolCode, ipAddress *IPAddress, ipPort uint16) *HPAIDataEndpoint {
@@ -64,6 +66,10 @@ func (m *HPAIDataEndpoint) GetTypeName() string {
 }
 
 func (m *HPAIDataEndpoint) LengthInBits() uint16 {
+	return m.LengthInBitsConditional(false)
+}
+
+func (m *HPAIDataEndpoint) LengthInBitsConditional(lastItem bool) uint16 {
 	lengthInBits := uint16(0)
 
 	// Implicit Field (structureLength)
@@ -85,30 +91,31 @@ func (m *HPAIDataEndpoint) LengthInBytes() uint16 {
 	return m.LengthInBits() / 8
 }
 
-func HPAIDataEndpointParse(io *utils.ReadBuffer) (*HPAIDataEndpoint, error) {
+func HPAIDataEndpointParse(io utils.ReadBuffer) (*HPAIDataEndpoint, error) {
 
 	// Implicit Field (structureLength) (Used for parsing, but it's value is not stored as it's implicitly given by the objects content)
-	_, _structureLengthErr := io.ReadUint8(8)
+	structureLength, _structureLengthErr := io.ReadUint8(8)
+	_ = structureLength
 	if _structureLengthErr != nil {
-		return nil, errors.New("Error parsing 'structureLength' field " + _structureLengthErr.Error())
+		return nil, errors.Wrap(_structureLengthErr, "Error parsing 'structureLength' field")
 	}
 
 	// Simple Field (hostProtocolCode)
 	hostProtocolCode, _hostProtocolCodeErr := HostProtocolCodeParse(io)
 	if _hostProtocolCodeErr != nil {
-		return nil, errors.New("Error parsing 'hostProtocolCode' field " + _hostProtocolCodeErr.Error())
+		return nil, errors.Wrap(_hostProtocolCodeErr, "Error parsing 'hostProtocolCode' field")
 	}
 
 	// Simple Field (ipAddress)
 	ipAddress, _ipAddressErr := IPAddressParse(io)
 	if _ipAddressErr != nil {
-		return nil, errors.New("Error parsing 'ipAddress' field " + _ipAddressErr.Error())
+		return nil, errors.Wrap(_ipAddressErr, "Error parsing 'ipAddress' field")
 	}
 
 	// Simple Field (ipPort)
 	ipPort, _ipPortErr := io.ReadUint16(16)
 	if _ipPortErr != nil {
-		return nil, errors.New("Error parsing 'ipPort' field " + _ipPortErr.Error())
+		return nil, errors.Wrap(_ipPortErr, "Error parsing 'ipPort' field")
 	}
 
 	// Create the instance
@@ -116,49 +123,53 @@ func HPAIDataEndpointParse(io *utils.ReadBuffer) (*HPAIDataEndpoint, error) {
 }
 
 func (m *HPAIDataEndpoint) Serialize(io utils.WriteBuffer) error {
+	io.PushContext("HPAIDataEndpoint")
 
 	// Implicit Field (structureLength) (Used for parsing, but it's value is not stored as it's implicitly given by the objects content)
 	structureLength := uint8(uint8(m.LengthInBytes()))
-	_structureLengthErr := io.WriteUint8(8, (structureLength))
+	_structureLengthErr := io.WriteUint8("structureLength", 8, (structureLength))
 	if _structureLengthErr != nil {
-		return errors.New("Error serializing 'structureLength' field " + _structureLengthErr.Error())
+		return errors.Wrap(_structureLengthErr, "Error serializing 'structureLength' field")
 	}
 
 	// Simple Field (hostProtocolCode)
 	_hostProtocolCodeErr := m.HostProtocolCode.Serialize(io)
 	if _hostProtocolCodeErr != nil {
-		return errors.New("Error serializing 'hostProtocolCode' field " + _hostProtocolCodeErr.Error())
+		return errors.Wrap(_hostProtocolCodeErr, "Error serializing 'hostProtocolCode' field")
 	}
 
 	// Simple Field (ipAddress)
 	_ipAddressErr := m.IpAddress.Serialize(io)
 	if _ipAddressErr != nil {
-		return errors.New("Error serializing 'ipAddress' field " + _ipAddressErr.Error())
+		return errors.Wrap(_ipAddressErr, "Error serializing 'ipAddress' field")
 	}
 
 	// Simple Field (ipPort)
 	ipPort := uint16(m.IpPort)
-	_ipPortErr := io.WriteUint16(16, (ipPort))
+	_ipPortErr := io.WriteUint16("ipPort", 16, (ipPort))
 	if _ipPortErr != nil {
-		return errors.New("Error serializing 'ipPort' field " + _ipPortErr.Error())
+		return errors.Wrap(_ipPortErr, "Error serializing 'ipPort' field")
 	}
 
+	io.PopContext("HPAIDataEndpoint")
 	return nil
 }
 
 func (m *HPAIDataEndpoint) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
 	var token xml.Token
 	var err error
+	foundContent := false
 	for {
 		token, err = d.Token()
 		if err != nil {
-			if err == io.EOF {
+			if err == io.EOF && foundContent {
 				return nil
 			}
 			return err
 		}
 		switch token.(type) {
 		case xml.StartElement:
+			foundContent = true
 			tok := token.(xml.StartElement)
 			switch tok.Name.Local {
 			case "hostProtocolCode":
@@ -168,11 +179,11 @@ func (m *HPAIDataEndpoint) UnmarshalXML(d *xml.Decoder, start xml.StartElement) 
 				}
 				m.HostProtocolCode = data
 			case "ipAddress":
-				var data *IPAddress
-				if err := d.DecodeElement(data, &tok); err != nil {
+				var data IPAddress
+				if err := d.DecodeElement(&data, &tok); err != nil {
 					return err
 				}
-				m.IpAddress = data
+				m.IpAddress = &data
 			case "ipPort":
 				var data uint16
 				if err := d.DecodeElement(&data, &tok); err != nil {
@@ -204,4 +215,28 @@ func (m *HPAIDataEndpoint) MarshalXML(e *xml.Encoder, start xml.StartElement) er
 		return err
 	}
 	return nil
+}
+
+func (m HPAIDataEndpoint) String() string {
+	return string(m.Box("", 120))
+}
+
+func (m HPAIDataEndpoint) Box(name string, width int) utils.AsciiBox {
+	boxName := "HPAIDataEndpoint"
+	if name != "" {
+		boxName += "/" + name
+	}
+	boxes := make([]utils.AsciiBox, 0)
+	// Implicit Field (structureLength)
+	structureLength := uint8(uint8(m.LengthInBytes()))
+	// uint8 can be boxed as anything with the least amount of space
+	boxes = append(boxes, utils.BoxAnything("StructureLength", structureLength, -1))
+	// Complex field (case complex)
+	boxes = append(boxes, m.HostProtocolCode.Box("hostProtocolCode", width-2))
+	// Complex field (case complex)
+	boxes = append(boxes, m.IpAddress.Box("ipAddress", width-2))
+	// Simple field (case simple)
+	// uint16 can be boxed as anything with the least amount of space
+	boxes = append(boxes, utils.BoxAnything("IpPort", m.IpPort, -1))
+	return utils.BoxBox(boxName, utils.AlignBoxes(boxes, width-2), 0)
 }

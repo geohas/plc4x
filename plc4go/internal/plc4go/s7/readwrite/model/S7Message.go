@@ -16,16 +16,17 @@
 // specific language governing permissions and limitations
 // under the License.
 //
+
 package model
 
 import (
 	"encoding/xml"
-	"errors"
+	"fmt"
 	"github.com/apache/plc4x/plc4go/internal/plc4go/spi/utils"
+	"github.com/pkg/errors"
 	"github.com/rs/zerolog/log"
 	"io"
 	"reflect"
-	"strconv"
 	"strings"
 )
 
@@ -49,6 +50,7 @@ type IS7Message interface {
 	LengthInBits() uint16
 	Serialize(io utils.WriteBuffer) error
 	xml.Marshaler
+	xml.Unmarshaler
 }
 
 type IS7MessageParent interface {
@@ -61,6 +63,7 @@ type IS7MessageChild interface {
 	InitializeParent(parent *S7Message, tpduReference uint16, parameter *S7Parameter, payload *S7Payload)
 	GetTypeName() string
 	IS7Message
+	utils.AsciiBoxer
 }
 
 func NewS7Message(tpduReference uint16, parameter *S7Parameter, payload *S7Payload) *S7Message {
@@ -85,11 +88,18 @@ func (m *S7Message) GetTypeName() string {
 }
 
 func (m *S7Message) LengthInBits() uint16 {
+	return m.LengthInBitsConditional(false)
+}
+
+func (m *S7Message) LengthInBitsConditional(lastItem bool) uint16 {
+	return m.Child.LengthInBits()
+}
+
+func (m *S7Message) ParentLengthInBits() uint16 {
 	lengthInBits := uint16(0)
 
 	// Const Field (protocolId)
 	lengthInBits += 8
-
 	// Discriminator Field (messageType)
 	lengthInBits += 8
 
@@ -104,9 +114,6 @@ func (m *S7Message) LengthInBits() uint16 {
 
 	// Implicit Field (payloadLength)
 	lengthInBits += 16
-
-	// Length of sub-type elements will be added by sub-type...
-	lengthInBits += m.Child.LengthInBits()
 
 	// Optional Field (parameter)
 	if m.Parameter != nil {
@@ -125,28 +132,28 @@ func (m *S7Message) LengthInBytes() uint16 {
 	return m.LengthInBits() / 8
 }
 
-func S7MessageParse(io *utils.ReadBuffer) (*S7Message, error) {
+func S7MessageParse(io utils.ReadBuffer) (*S7Message, error) {
 
 	// Const Field (protocolId)
 	protocolId, _protocolIdErr := io.ReadUint8(8)
 	if _protocolIdErr != nil {
-		return nil, errors.New("Error parsing 'protocolId' field " + _protocolIdErr.Error())
+		return nil, errors.Wrap(_protocolIdErr, "Error parsing 'protocolId' field")
 	}
 	if protocolId != S7Message_PROTOCOLID {
-		return nil, errors.New("Expected constant value " + strconv.Itoa(int(S7Message_PROTOCOLID)) + " but got " + strconv.Itoa(int(protocolId)))
+		return nil, errors.New("Expected constant value " + fmt.Sprintf("%d", S7Message_PROTOCOLID) + " but got " + fmt.Sprintf("%d", protocolId))
 	}
 
 	// Discriminator Field (messageType) (Used as input to a switch field)
 	messageType, _messageTypeErr := io.ReadUint8(8)
 	if _messageTypeErr != nil {
-		return nil, errors.New("Error parsing 'messageType' field " + _messageTypeErr.Error())
+		return nil, errors.Wrap(_messageTypeErr, "Error parsing 'messageType' field")
 	}
 
 	// Reserved Field (Compartmentalized so the "reserved" variable can't leak)
 	{
 		reserved, _err := io.ReadUint16(16)
 		if _err != nil {
-			return nil, errors.New("Error parsing 'reserved' field " + _err.Error())
+			return nil, errors.Wrap(_err, "Error parsing 'reserved' field")
 		}
 		if reserved != uint16(0x0000) {
 			log.Info().Fields(map[string]interface{}{
@@ -159,36 +166,41 @@ func S7MessageParse(io *utils.ReadBuffer) (*S7Message, error) {
 	// Simple Field (tpduReference)
 	tpduReference, _tpduReferenceErr := io.ReadUint16(16)
 	if _tpduReferenceErr != nil {
-		return nil, errors.New("Error parsing 'tpduReference' field " + _tpduReferenceErr.Error())
+		return nil, errors.Wrap(_tpduReferenceErr, "Error parsing 'tpduReference' field")
 	}
 
 	// Implicit Field (parameterLength) (Used for parsing, but it's value is not stored as it's implicitly given by the objects content)
 	parameterLength, _parameterLengthErr := io.ReadUint16(16)
+	_ = parameterLength
 	if _parameterLengthErr != nil {
-		return nil, errors.New("Error parsing 'parameterLength' field " + _parameterLengthErr.Error())
+		return nil, errors.Wrap(_parameterLengthErr, "Error parsing 'parameterLength' field")
 	}
 
 	// Implicit Field (payloadLength) (Used for parsing, but it's value is not stored as it's implicitly given by the objects content)
 	payloadLength, _payloadLengthErr := io.ReadUint16(16)
+	_ = payloadLength
 	if _payloadLengthErr != nil {
-		return nil, errors.New("Error parsing 'payloadLength' field " + _payloadLengthErr.Error())
+		return nil, errors.Wrap(_payloadLengthErr, "Error parsing 'payloadLength' field")
 	}
 
 	// Switch Field (Depending on the discriminator values, passes the instantiation to a sub-type)
 	var _parent *S7Message
 	var typeSwitchError error
 	switch {
-	case messageType == 0x01:
+	case messageType == 0x01: // S7MessageRequest
 		_parent, typeSwitchError = S7MessageRequestParse(io)
-	case messageType == 0x02:
+	case messageType == 0x02: // S7MessageResponse
 		_parent, typeSwitchError = S7MessageResponseParse(io)
-	case messageType == 0x03:
+	case messageType == 0x03: // S7MessageResponseData
 		_parent, typeSwitchError = S7MessageResponseDataParse(io)
-	case messageType == 0x07:
+	case messageType == 0x07: // S7MessageUserData
 		_parent, typeSwitchError = S7MessageUserDataParse(io)
+	default:
+		// TODO: return actual type
+		typeSwitchError = errors.New("Unmapped type")
 	}
 	if typeSwitchError != nil {
-		return nil, errors.New("Error parsing sub-type for type-switch. " + typeSwitchError.Error())
+		return nil, errors.Wrap(typeSwitchError, "Error parsing sub-type for type-switch.")
 	}
 
 	// Optional Field (parameter) (Can be skipped, if a given expression evaluates to false)
@@ -196,7 +208,7 @@ func S7MessageParse(io *utils.ReadBuffer) (*S7Message, error) {
 	if bool((parameterLength) > (0)) {
 		_val, _err := S7ParameterParse(io, messageType)
 		if _err != nil {
-			return nil, errors.New("Error parsing 'parameter' field " + _err.Error())
+			return nil, errors.Wrap(_err, "Error parsing 'parameter' field")
 		}
 		parameter = _val
 	}
@@ -206,7 +218,7 @@ func S7MessageParse(io *utils.ReadBuffer) (*S7Message, error) {
 	if bool((payloadLength) > (0)) {
 		_val, _err := S7PayloadParse(io, messageType, (parameter))
 		if _err != nil {
-			return nil, errors.New("Error parsing 'payload' field " + _err.Error())
+			return nil, errors.Wrap(_err, "Error parsing 'payload' field")
 		}
 		payload = _val
 	}
@@ -221,53 +233,55 @@ func (m *S7Message) Serialize(io utils.WriteBuffer) error {
 }
 
 func (m *S7Message) SerializeParent(io utils.WriteBuffer, child IS7Message, serializeChildFunction func() error) error {
+	io.PushContext("S7Message")
 
 	// Const Field (protocolId)
-	_protocolIdErr := io.WriteUint8(8, 0x32)
+	_protocolIdErr := io.WriteUint8("protocolId", 8, 0x32)
 	if _protocolIdErr != nil {
-		return errors.New("Error serializing 'protocolId' field " + _protocolIdErr.Error())
+		return errors.Wrap(_protocolIdErr, "Error serializing 'protocolId' field")
 	}
 
 	// Discriminator Field (messageType) (Used as input to a switch field)
 	messageType := uint8(child.MessageType())
-	_messageTypeErr := io.WriteUint8(8, (messageType))
+	_messageTypeErr := io.WriteUint8("messageType", 8, (messageType))
+
 	if _messageTypeErr != nil {
-		return errors.New("Error serializing 'messageType' field " + _messageTypeErr.Error())
+		return errors.Wrap(_messageTypeErr, "Error serializing 'messageType' field")
 	}
 
 	// Reserved Field (reserved)
 	{
-		_err := io.WriteUint16(16, uint16(0x0000))
+		_err := io.WriteUint16("reserved", 16, uint16(0x0000))
 		if _err != nil {
-			return errors.New("Error serializing 'reserved' field " + _err.Error())
+			return errors.Wrap(_err, "Error serializing 'reserved' field")
 		}
 	}
 
 	// Simple Field (tpduReference)
 	tpduReference := uint16(m.TpduReference)
-	_tpduReferenceErr := io.WriteUint16(16, (tpduReference))
+	_tpduReferenceErr := io.WriteUint16("tpduReference", 16, (tpduReference))
 	if _tpduReferenceErr != nil {
-		return errors.New("Error serializing 'tpduReference' field " + _tpduReferenceErr.Error())
+		return errors.Wrap(_tpduReferenceErr, "Error serializing 'tpduReference' field")
 	}
 
 	// Implicit Field (parameterLength) (Used for parsing, but it's value is not stored as it's implicitly given by the objects content)
-	parameterLength := uint16(utils.InlineIf(bool((m.Parameter) != (nil)), uint16(m.Parameter.LengthInBytes()), uint16(uint16(0))))
-	_parameterLengthErr := io.WriteUint16(16, (parameterLength))
+	parameterLength := uint16(utils.InlineIf(bool((m.Parameter) != (nil)), func() uint16 { return uint16(m.Parameter.LengthInBytes()) }, func() uint16 { return uint16(uint16(0)) }))
+	_parameterLengthErr := io.WriteUint16("parameterLength", 16, (parameterLength))
 	if _parameterLengthErr != nil {
-		return errors.New("Error serializing 'parameterLength' field " + _parameterLengthErr.Error())
+		return errors.Wrap(_parameterLengthErr, "Error serializing 'parameterLength' field")
 	}
 
 	// Implicit Field (payloadLength) (Used for parsing, but it's value is not stored as it's implicitly given by the objects content)
-	payloadLength := uint16(utils.InlineIf(bool((m.Payload) != (nil)), uint16(m.Payload.LengthInBytes()), uint16(uint16(0))))
-	_payloadLengthErr := io.WriteUint16(16, (payloadLength))
+	payloadLength := uint16(utils.InlineIf(bool((m.Payload) != (nil)), func() uint16 { return uint16(m.Payload.LengthInBytes()) }, func() uint16 { return uint16(uint16(0)) }))
+	_payloadLengthErr := io.WriteUint16("payloadLength", 16, (payloadLength))
 	if _payloadLengthErr != nil {
-		return errors.New("Error serializing 'payloadLength' field " + _payloadLengthErr.Error())
+		return errors.Wrap(_payloadLengthErr, "Error serializing 'payloadLength' field")
 	}
 
 	// Switch field (Depending on the discriminator values, passes the serialization to a sub-type)
 	_typeSwitchErr := serializeChildFunction()
 	if _typeSwitchErr != nil {
-		return errors.New("Error serializing sub-type field " + _typeSwitchErr.Error())
+		return errors.Wrap(_typeSwitchErr, "Error serializing sub-type field")
 	}
 
 	// Optional Field (parameter) (Can be skipped, if the value is null)
@@ -276,7 +290,7 @@ func (m *S7Message) SerializeParent(io utils.WriteBuffer, child IS7Message, seri
 		parameter = m.Parameter
 		_parameterErr := parameter.Serialize(io)
 		if _parameterErr != nil {
-			return errors.New("Error serializing 'parameter' field " + _parameterErr.Error())
+			return errors.Wrap(_parameterErr, "Error serializing 'parameter' field")
 		}
 	}
 
@@ -286,26 +300,47 @@ func (m *S7Message) SerializeParent(io utils.WriteBuffer, child IS7Message, seri
 		payload = m.Payload
 		_payloadErr := payload.Serialize(io)
 		if _payloadErr != nil {
-			return errors.New("Error serializing 'payload' field " + _payloadErr.Error())
+			return errors.Wrap(_payloadErr, "Error serializing 'payload' field")
 		}
 	}
 
+	io.PopContext("S7Message")
 	return nil
 }
 
 func (m *S7Message) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
 	var token xml.Token
 	var err error
+	foundContent := false
+	if start.Attr != nil && len(start.Attr) > 0 {
+		switch start.Attr[0].Value {
+		// S7MessageRequest needs special treatment as it has no fields
+		case "org.apache.plc4x.java.s7.readwrite.S7MessageRequest":
+			if m.Child == nil {
+				m.Child = &S7MessageRequest{
+					Parent: m,
+				}
+			}
+		// S7MessageUserData needs special treatment as it has no fields
+		case "org.apache.plc4x.java.s7.readwrite.S7MessageUserData":
+			if m.Child == nil {
+				m.Child = &S7MessageUserData{
+					Parent: m,
+				}
+			}
+		}
+	}
 	for {
 		token, err = d.Token()
 		if err != nil {
-			if err == io.EOF {
+			if err == io.EOF && foundContent {
 				return nil
 			}
 			return err
 		}
 		switch token.(type) {
 		case xml.StartElement:
+			foundContent = true
 			tok := token.(xml.StartElement)
 			switch tok.Name.Local {
 			case "tpduReference":
@@ -317,17 +352,31 @@ func (m *S7Message) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
 			case "parameter":
 				var dt *S7Parameter
 				if err := d.DecodeElement(&dt, &tok); err != nil {
+					if err == io.EOF {
+						continue
+					}
 					return err
 				}
 				m.Parameter = dt
 			case "payload":
 				var dt *S7Payload
 				if err := d.DecodeElement(&dt, &tok); err != nil {
+					if err == io.EOF {
+						continue
+					}
 					return err
 				}
 				m.Payload = dt
 			default:
-				switch start.Attr[0].Value {
+				attr := start.Attr
+				if attr == nil || len(attr) <= 0 {
+					// TODO: workaround for bug with nested lists
+					attr = tok.Attr
+				}
+				if attr == nil || len(attr) <= 0 {
+					panic("Couldn't determine class type for childs of S7Message")
+				}
+				switch attr[0].Value {
 				case "org.apache.plc4x.java.s7.readwrite.S7MessageRequest":
 					var dt *S7MessageRequest
 					if m.Child != nil {
@@ -393,21 +442,72 @@ func (m *S7Message) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
 	if err := e.EncodeElement(m.TpduReference, xml.StartElement{Name: xml.Name{Local: "tpduReference"}}); err != nil {
 		return err
 	}
-	marshaller, ok := m.Child.(xml.Marshaler)
-	if !ok {
-		return errors.New("child is not castable to Marshaler")
-	}
-	if err := marshaller.MarshalXML(e, start); err != nil {
-		return err
-	}
 	if err := e.EncodeElement(m.Parameter, xml.StartElement{Name: xml.Name{Local: "parameter"}}); err != nil {
 		return err
 	}
 	if err := e.EncodeElement(m.Payload, xml.StartElement{Name: xml.Name{Local: "payload"}}); err != nil {
 		return err
 	}
+	marshaller, ok := m.Child.(xml.Marshaler)
+	if !ok {
+		return errors.Errorf("child is not castable to Marshaler. Actual type %T", m.Child)
+	}
+	if err := marshaller.MarshalXML(e, start); err != nil {
+		return err
+	}
 	if err := e.EncodeToken(xml.EndElement{Name: start.Name}); err != nil {
 		return err
 	}
 	return nil
+}
+
+func (m S7Message) String() string {
+	return string(m.Box("", 120))
+}
+
+func (m *S7Message) Box(name string, width int) utils.AsciiBox {
+	return m.Child.Box(name, width)
+}
+
+func (m *S7Message) BoxParent(name string, width int, childBoxer func() []utils.AsciiBox) utils.AsciiBox {
+	boxName := "S7Message"
+	if name != "" {
+		boxName += "/" + name
+	}
+	boxes := make([]utils.AsciiBox, 0)
+	// Const Field (protocolId)
+	boxes = append(boxes, utils.BoxAnything("ProtocolId", uint8(0x32), -1))
+	// Discriminator Field (messageType) (Used as input to a switch field)
+	messageType := uint8(m.Child.MessageType())
+	// uint8 can be boxed as anything with the least amount of space
+	boxes = append(boxes, utils.BoxAnything("MessageType", messageType, -1))
+	// Reserved Field (reserved)
+	// reserved field can be boxed as anything with the least amount of space
+	boxes = append(boxes, utils.BoxAnything("reserved", uint16(0x0000), -1))
+	// Simple field (case simple)
+	// uint16 can be boxed as anything with the least amount of space
+	boxes = append(boxes, utils.BoxAnything("TpduReference", m.TpduReference, -1))
+	// Implicit Field (parameterLength)
+	parameterLength := uint16(utils.InlineIf(bool((m.Parameter) != (nil)), func() uint16 { return uint16(m.Parameter.LengthInBytes()) }, func() uint16 { return uint16(uint16(0)) }))
+	// uint16 can be boxed as anything with the least amount of space
+	boxes = append(boxes, utils.BoxAnything("ParameterLength", parameterLength, -1))
+	// Implicit Field (payloadLength)
+	payloadLength := uint16(utils.InlineIf(bool((m.Payload) != (nil)), func() uint16 { return uint16(m.Payload.LengthInBytes()) }, func() uint16 { return uint16(uint16(0)) }))
+	// uint16 can be boxed as anything with the least amount of space
+	boxes = append(boxes, utils.BoxAnything("PayloadLength", payloadLength, -1))
+	// Switch field (Depending on the discriminator values, passes the boxing to a sub-type)
+	boxes = append(boxes, childBoxer()...)
+	// Optional Field (parameter) (Can be skipped, if the value is null)
+	var parameter *S7Parameter = nil
+	if m.Parameter != nil {
+		parameter = m.Parameter
+		boxes = append(boxes, parameter.Box("parameter", width-2))
+	}
+	// Optional Field (payload) (Can be skipped, if the value is null)
+	var payload *S7Payload = nil
+	if m.Payload != nil {
+		payload = m.Payload
+		boxes = append(boxes, payload.Box("payload", width-2))
+	}
+	return utils.BoxBox(boxName, utils.AlignBoxes(boxes, width-2), 0)
 }

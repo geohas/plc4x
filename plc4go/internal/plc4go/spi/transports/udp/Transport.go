@@ -16,13 +16,14 @@
 // specific language governing permissions and limitations
 // under the License.
 //
+
 package udp
 
 import (
 	"bufio"
-	"errors"
 	"github.com/apache/plc4x/plc4go/internal/plc4go/spi/transports"
 	"github.com/apache/plc4x/plc4go/internal/plc4go/spi/utils"
+	"github.com/pkg/errors"
 	"net"
 	"net/url"
 	"regexp"
@@ -65,17 +66,15 @@ func (m Transport) CreateTransportInstanceForLocalAddress(transportUrl url.URL, 
 		if val, ok := match["port"]; ok && len(val) > 0 {
 			portVal, err := strconv.Atoi(val)
 			if err != nil {
-				return nil, errors.New("error setting port: " + err.Error())
-			} else {
-				remotePort = portVal
+				return nil, errors.Wrap(err, "error setting port")
 			}
+			remotePort = portVal
 		} else if val, ok := options["defaultUdpPort"]; ok && len(val) > 0 {
 			portVal, err := strconv.Atoi(val[0])
 			if err != nil {
-				return nil, errors.New("error setting default udp port: " + err.Error())
-			} else {
-				remotePort = portVal
+				return nil, errors.Wrap(err, "error setting default udp port")
 			}
+			remotePort = portVal
 		} else {
 			return nil, errors.New("error setting port. No explicit or default port provided")
 		}
@@ -84,7 +83,7 @@ func (m Transport) CreateTransportInstanceForLocalAddress(transportUrl url.URL, 
 	if val, ok := options["connect-timeout"]; ok {
 		ival, err := strconv.Atoi(val[0])
 		if err != nil {
-			return nil, errors.New("error setting connect-timeout: " + err.Error())
+			return nil, errors.Wrap(err, "error setting connect-timeout")
 		} else {
 			connectTimeout = uint32(ival)
 		}
@@ -93,7 +92,7 @@ func (m Transport) CreateTransportInstanceForLocalAddress(transportUrl url.URL, 
 	// Potentially resolve the ip address, if a hostname was provided
 	remoteAddress, err := net.ResolveUDPAddr("udp", remoteAddressString+":"+strconv.Itoa(remotePort))
 	if err != nil {
-		return nil, errors.New("error resolving typ address: " + err.Error())
+		return nil, errors.Wrap(err, "error resolving typ address")
 	}
 
 	transportInstance := NewTransportInstance(localAddress, remoteAddress, connectTimeout, &m)
@@ -131,12 +130,12 @@ func (m *TransportInstance) Connect() error {
 	if m.LocalAddress == nil {
 		udpTest, err := net.Dial("udp", m.RemoteAddress.String())
 		if err != nil {
-			return errors.New("error connecting to remote address: " + err.Error())
+			return errors.Wrap(err, "error connecting to remote address")
 		}
 		m.LocalAddress = udpTest.LocalAddr().(*net.UDPAddr)
 		err = udpTest.Close()
 		if err != nil {
-			return errors.New("error closing test-connection: " + err.Error())
+			return errors.Wrap(err, "error closing test-connection")
 		}
 	}
 
@@ -144,7 +143,7 @@ func (m *TransportInstance) Connect() error {
 	var err error
 	m.udpConn, err = net.ListenUDP("udp", m.LocalAddress)
 	if err != nil {
-		return errors.New("error connecting to remote address: " + err.Error())
+		return errors.Wrap(err, "error connecting to remote address")
 	}
 
 	// TODO: Start a worker that uses m.udpConn.ReadFromUDP() to fill a buffer
@@ -163,55 +162,56 @@ func (m *TransportInstance) Connect() error {
 }
 
 func (m *TransportInstance) Close() error {
-	if m.udpConn != nil {
-		err := m.udpConn.Close()
-		if err != nil {
-			return errors.New("error closing connection: " + err.Error())
-		}
+	if m.udpConn == nil {
+		return nil
+	}
+	err := m.udpConn.Close()
+	if err != nil {
+		return errors.Wrap(err, "error closing connection")
 	}
 	return nil
 }
 
 func (m *TransportInstance) GetNumReadableBytes() (uint32, error) {
-	if m.reader != nil {
-		_, _ = m.reader.Peek(1)
-		return uint32(m.reader.Buffered()), nil
+	if m.reader == nil {
+		return 0, nil
 	}
-	return 0, nil
+	_, _ = m.reader.Peek(1)
+	return uint32(m.reader.Buffered()), nil
 }
 
 func (m *TransportInstance) PeekReadableBytes(numBytes uint32) ([]uint8, error) {
-	if m.reader != nil {
-		return m.reader.Peek(int(numBytes))
+	if m.reader == nil {
+		return nil, errors.New("error peeking from transport. No reader available")
 	}
-	return nil, errors.New("error peeking from transport. No reader available")
+	return m.reader.Peek(int(numBytes))
 }
 
 func (m *TransportInstance) Read(numBytes uint32) ([]uint8, error) {
-	if m.reader != nil {
-		data := make([]uint8, numBytes)
-		for i := uint32(0); i < numBytes; i++ {
-			val, err := m.reader.ReadByte()
-			if err != nil {
-				return nil, errors.New("error reading: " + err.Error())
-			}
-			data[i] = val
-		}
-		return data, nil
+	if m.reader == nil {
+		return nil, errors.New("error reading from transport. No reader available")
 	}
-	return nil, errors.New("error reading from transport. No reader available")
+	data := make([]uint8, numBytes)
+	for i := uint32(0); i < numBytes; i++ {
+		val, err := m.reader.ReadByte()
+		if err != nil {
+			return nil, errors.Wrap(err, "error reading")
+		}
+		data[i] = val
+	}
+	return data, nil
 }
 
 func (m *TransportInstance) Write(data []uint8) error {
-	if m.udpConn != nil {
-		num, err := m.udpConn.WriteToUDP(data, m.RemoteAddress)
-		if err != nil {
-			return errors.New("error writing: " + err.Error())
-		}
-		if num != len(data) {
-			return errors.New("error writing: not all bytes written")
-		}
-		return nil
+	if m.udpConn == nil {
+		return errors.New("error writing to transport. No writer available")
 	}
-	return errors.New("error writing to transport. No writer available")
+	num, err := m.udpConn.WriteToUDP(data, m.RemoteAddress)
+	if err != nil {
+		return errors.Wrap(err, "error writing")
+	}
+	if num != len(data) {
+		return errors.New("error writing: not all bytes written")
+	}
+	return nil
 }

@@ -16,12 +16,13 @@
 // specific language governing permissions and limitations
 // under the License.
 //
+
 package model
 
 import (
 	"encoding/xml"
-	"errors"
 	"github.com/apache/plc4x/plc4go/internal/plc4go/spi/utils"
+	"github.com/pkg/errors"
 	"io"
 	"reflect"
 	"strings"
@@ -41,6 +42,7 @@ type IAdsMultiRequestItem interface {
 	LengthInBits() uint16
 	Serialize(io utils.WriteBuffer) error
 	xml.Marshaler
+	xml.Unmarshaler
 }
 
 type IAdsMultiRequestItemParent interface {
@@ -53,6 +55,7 @@ type IAdsMultiRequestItemChild interface {
 	InitializeParent(parent *AdsMultiRequestItem)
 	GetTypeName() string
 	IAdsMultiRequestItem
+	utils.AsciiBoxer
 }
 
 func NewAdsMultiRequestItem() *AdsMultiRequestItem {
@@ -77,10 +80,15 @@ func (m *AdsMultiRequestItem) GetTypeName() string {
 }
 
 func (m *AdsMultiRequestItem) LengthInBits() uint16 {
-	lengthInBits := uint16(0)
+	return m.LengthInBitsConditional(false)
+}
 
-	// Length of sub-type elements will be added by sub-type...
-	lengthInBits += m.Child.LengthInBits()
+func (m *AdsMultiRequestItem) LengthInBitsConditional(lastItem bool) uint16 {
+	return m.Child.LengthInBits()
+}
+
+func (m *AdsMultiRequestItem) ParentLengthInBits() uint16 {
+	lengthInBits := uint16(0)
 
 	return lengthInBits
 }
@@ -89,21 +97,24 @@ func (m *AdsMultiRequestItem) LengthInBytes() uint16 {
 	return m.LengthInBits() / 8
 }
 
-func AdsMultiRequestItemParse(io *utils.ReadBuffer, indexGroup uint32) (*AdsMultiRequestItem, error) {
+func AdsMultiRequestItemParse(io utils.ReadBuffer, indexGroup uint32) (*AdsMultiRequestItem, error) {
 
 	// Switch Field (Depending on the discriminator values, passes the instantiation to a sub-type)
 	var _parent *AdsMultiRequestItem
 	var typeSwitchError error
 	switch {
-	case indexGroup == 61568:
+	case indexGroup == 61568: // AdsMultiRequestItemRead
 		_parent, typeSwitchError = AdsMultiRequestItemReadParse(io)
-	case indexGroup == 61569:
+	case indexGroup == 61569: // AdsMultiRequestItemWrite
 		_parent, typeSwitchError = AdsMultiRequestItemWriteParse(io)
-	case indexGroup == 61570:
+	case indexGroup == 61570: // AdsMultiRequestItemReadWrite
 		_parent, typeSwitchError = AdsMultiRequestItemReadWriteParse(io)
+	default:
+		// TODO: return actual type
+		typeSwitchError = errors.New("Unmapped type")
 	}
 	if typeSwitchError != nil {
-		return nil, errors.New("Error parsing sub-type for type-switch. " + typeSwitchError.Error())
+		return nil, errors.Wrap(typeSwitchError, "Error parsing sub-type for type-switch.")
 	}
 
 	// Finish initializing
@@ -116,33 +127,49 @@ func (m *AdsMultiRequestItem) Serialize(io utils.WriteBuffer) error {
 }
 
 func (m *AdsMultiRequestItem) SerializeParent(io utils.WriteBuffer, child IAdsMultiRequestItem, serializeChildFunction func() error) error {
+	io.PushContext("AdsMultiRequestItem")
 
 	// Switch field (Depending on the discriminator values, passes the serialization to a sub-type)
 	_typeSwitchErr := serializeChildFunction()
 	if _typeSwitchErr != nil {
-		return errors.New("Error serializing sub-type field " + _typeSwitchErr.Error())
+		return errors.Wrap(_typeSwitchErr, "Error serializing sub-type field")
 	}
 
+	io.PopContext("AdsMultiRequestItem")
 	return nil
 }
 
 func (m *AdsMultiRequestItem) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
 	var token xml.Token
 	var err error
+	foundContent := false
+	if start.Attr != nil && len(start.Attr) > 0 {
+		switch start.Attr[0].Value {
+		}
+	}
 	for {
 		token, err = d.Token()
 		if err != nil {
-			if err == io.EOF {
+			if err == io.EOF && foundContent {
 				return nil
 			}
 			return err
 		}
 		switch token.(type) {
 		case xml.StartElement:
+			foundContent = true
 			tok := token.(xml.StartElement)
 			switch tok.Name.Local {
 			default:
-				switch start.Attr[0].Value {
+				attr := start.Attr
+				if attr == nil || len(attr) <= 0 {
+					// TODO: workaround for bug with nested lists
+					attr = tok.Attr
+				}
+				if attr == nil || len(attr) <= 0 {
+					panic("Couldn't determine class type for childs of AdsMultiRequestItem")
+				}
+				switch attr[0].Value {
 				case "org.apache.plc4x.java.ads.readwrite.AdsMultiRequestItemRead":
 					var dt *AdsMultiRequestItemRead
 					if m.Child != nil {
@@ -195,7 +222,7 @@ func (m *AdsMultiRequestItem) MarshalXML(e *xml.Encoder, start xml.StartElement)
 	}
 	marshaller, ok := m.Child.(xml.Marshaler)
 	if !ok {
-		return errors.New("child is not castable to Marshaler")
+		return errors.Errorf("child is not castable to Marshaler. Actual type %T", m.Child)
 	}
 	if err := marshaller.MarshalXML(e, start); err != nil {
 		return err
@@ -204,4 +231,23 @@ func (m *AdsMultiRequestItem) MarshalXML(e *xml.Encoder, start xml.StartElement)
 		return err
 	}
 	return nil
+}
+
+func (m AdsMultiRequestItem) String() string {
+	return string(m.Box("", 120))
+}
+
+func (m *AdsMultiRequestItem) Box(name string, width int) utils.AsciiBox {
+	return m.Child.Box(name, width)
+}
+
+func (m *AdsMultiRequestItem) BoxParent(name string, width int, childBoxer func() []utils.AsciiBox) utils.AsciiBox {
+	boxName := "AdsMultiRequestItem"
+	if name != "" {
+		boxName += "/" + name
+	}
+	boxes := make([]utils.AsciiBox, 0)
+	// Switch field (Depending on the discriminator values, passes the boxing to a sub-type)
+	boxes = append(boxes, childBoxer()...)
+	return utils.BoxBox(boxName, utils.AlignBoxes(boxes, width-2), 0)
 }

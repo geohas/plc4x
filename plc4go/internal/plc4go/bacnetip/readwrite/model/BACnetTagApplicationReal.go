@@ -16,12 +16,13 @@
 // specific language governing permissions and limitations
 // under the License.
 //
+
 package model
 
 import (
 	"encoding/xml"
-	"errors"
 	"github.com/apache/plc4x/plc4go/internal/plc4go/spi/utils"
+	"github.com/pkg/errors"
 	"io"
 )
 
@@ -39,6 +40,7 @@ type IBACnetTagApplicationReal interface {
 	LengthInBits() uint16
 	Serialize(io utils.WriteBuffer) error
 	xml.Marshaler
+	xml.Unmarshaler
 }
 
 ///////////////////////////////////////////////////////////
@@ -88,7 +90,11 @@ func (m *BACnetTagApplicationReal) GetTypeName() string {
 }
 
 func (m *BACnetTagApplicationReal) LengthInBits() uint16 {
-	lengthInBits := uint16(0)
+	return m.LengthInBitsConditional(false)
+}
+
+func (m *BACnetTagApplicationReal) LengthInBitsConditional(lastItem bool) uint16 {
+	lengthInBits := uint16(m.Parent.ParentLengthInBits())
 
 	// Simple field (value)
 	lengthInBits += 32
@@ -100,12 +106,12 @@ func (m *BACnetTagApplicationReal) LengthInBytes() uint16 {
 	return m.LengthInBits() / 8
 }
 
-func BACnetTagApplicationRealParse(io *utils.ReadBuffer, lengthValueType uint8, extLength uint8) (*BACnetTag, error) {
+func BACnetTagApplicationRealParse(io utils.ReadBuffer, lengthValueType uint8, extLength uint8) (*BACnetTag, error) {
 
 	// Simple Field (value)
 	value, _valueErr := io.ReadFloat32(true, 8, 23)
 	if _valueErr != nil {
-		return nil, errors.New("Error parsing 'value' field " + _valueErr.Error())
+		return nil, errors.Wrap(_valueErr, "Error parsing 'value' field")
 	}
 
 	// Create a partially initialized instance
@@ -119,14 +125,16 @@ func BACnetTagApplicationRealParse(io *utils.ReadBuffer, lengthValueType uint8, 
 
 func (m *BACnetTagApplicationReal) Serialize(io utils.WriteBuffer) error {
 	ser := func() error {
+		io.PushContext("BACnetTagApplicationReal")
 
 		// Simple Field (value)
 		value := float32(m.Value)
-		_valueErr := io.WriteFloat32(32, (value))
+		_valueErr := io.WriteFloat32("value", 32, (value))
 		if _valueErr != nil {
-			return errors.New("Error serializing 'value' field " + _valueErr.Error())
+			return errors.Wrap(_valueErr, "Error serializing 'value' field")
 		}
 
+		io.PopContext("BACnetTagApplicationReal")
 		return nil
 	}
 	return m.Parent.SerializeParent(io, m, ser)
@@ -135,10 +143,12 @@ func (m *BACnetTagApplicationReal) Serialize(io utils.WriteBuffer) error {
 func (m *BACnetTagApplicationReal) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
 	var token xml.Token
 	var err error
+	foundContent := false
 	token = start
 	for {
 		switch token.(type) {
 		case xml.StartElement:
+			foundContent = true
 			tok := token.(xml.StartElement)
 			switch tok.Name.Local {
 			case "value":
@@ -151,7 +161,7 @@ func (m *BACnetTagApplicationReal) UnmarshalXML(d *xml.Decoder, start xml.StartE
 		}
 		token, err = d.Token()
 		if err != nil {
-			if err == io.EOF {
+			if err == io.EOF && foundContent {
 				return nil
 			}
 			return err
@@ -164,4 +174,23 @@ func (m *BACnetTagApplicationReal) MarshalXML(e *xml.Encoder, start xml.StartEle
 		return err
 	}
 	return nil
+}
+
+func (m BACnetTagApplicationReal) String() string {
+	return string(m.Box("", 120))
+}
+
+func (m BACnetTagApplicationReal) Box(name string, width int) utils.AsciiBox {
+	boxName := "BACnetTagApplicationReal"
+	if name != "" {
+		boxName += "/" + name
+	}
+	childBoxer := func() []utils.AsciiBox {
+		boxes := make([]utils.AsciiBox, 0)
+		// Simple field (case simple)
+		// float32 can be boxed as anything with the least amount of space
+		boxes = append(boxes, utils.BoxAnything("Value", m.Value, -1))
+		return boxes
+	}
+	return m.Parent.BoxParent(boxName, width, childBoxer)
 }

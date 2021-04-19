@@ -16,12 +16,13 @@
 // specific language governing permissions and limitations
 // under the License.
 //
+
 package model
 
 import (
 	"encoding/xml"
-	"errors"
 	"github.com/apache/plc4x/plc4go/internal/plc4go/spi/utils"
+	"github.com/pkg/errors"
 	"github.com/rs/zerolog/log"
 	"io"
 )
@@ -41,6 +42,7 @@ type IDisconnectRequest interface {
 	LengthInBits() uint16
 	Serialize(io utils.WriteBuffer) error
 	xml.Marshaler
+	xml.Unmarshaler
 }
 
 ///////////////////////////////////////////////////////////
@@ -87,7 +89,11 @@ func (m *DisconnectRequest) GetTypeName() string {
 }
 
 func (m *DisconnectRequest) LengthInBits() uint16 {
-	lengthInBits := uint16(0)
+	return m.LengthInBitsConditional(false)
+}
+
+func (m *DisconnectRequest) LengthInBitsConditional(lastItem bool) uint16 {
+	lengthInBits := uint16(m.Parent.ParentLengthInBits())
 
 	// Simple field (communicationChannelId)
 	lengthInBits += 8
@@ -105,19 +111,19 @@ func (m *DisconnectRequest) LengthInBytes() uint16 {
 	return m.LengthInBits() / 8
 }
 
-func DisconnectRequestParse(io *utils.ReadBuffer) (*KnxNetIpMessage, error) {
+func DisconnectRequestParse(io utils.ReadBuffer) (*KnxNetIpMessage, error) {
 
 	// Simple Field (communicationChannelId)
 	communicationChannelId, _communicationChannelIdErr := io.ReadUint8(8)
 	if _communicationChannelIdErr != nil {
-		return nil, errors.New("Error parsing 'communicationChannelId' field " + _communicationChannelIdErr.Error())
+		return nil, errors.Wrap(_communicationChannelIdErr, "Error parsing 'communicationChannelId' field")
 	}
 
 	// Reserved Field (Compartmentalized so the "reserved" variable can't leak)
 	{
 		reserved, _err := io.ReadUint8(8)
 		if _err != nil {
-			return nil, errors.New("Error parsing 'reserved' field " + _err.Error())
+			return nil, errors.Wrap(_err, "Error parsing 'reserved' field")
 		}
 		if reserved != uint8(0x00) {
 			log.Info().Fields(map[string]interface{}{
@@ -130,7 +136,7 @@ func DisconnectRequestParse(io *utils.ReadBuffer) (*KnxNetIpMessage, error) {
 	// Simple Field (hpaiControlEndpoint)
 	hpaiControlEndpoint, _hpaiControlEndpointErr := HPAIControlEndpointParse(io)
 	if _hpaiControlEndpointErr != nil {
-		return nil, errors.New("Error parsing 'hpaiControlEndpoint' field " + _hpaiControlEndpointErr.Error())
+		return nil, errors.Wrap(_hpaiControlEndpointErr, "Error parsing 'hpaiControlEndpoint' field")
 	}
 
 	// Create a partially initialized instance
@@ -145,28 +151,30 @@ func DisconnectRequestParse(io *utils.ReadBuffer) (*KnxNetIpMessage, error) {
 
 func (m *DisconnectRequest) Serialize(io utils.WriteBuffer) error {
 	ser := func() error {
+		io.PushContext("DisconnectRequest")
 
 		// Simple Field (communicationChannelId)
 		communicationChannelId := uint8(m.CommunicationChannelId)
-		_communicationChannelIdErr := io.WriteUint8(8, (communicationChannelId))
+		_communicationChannelIdErr := io.WriteUint8("communicationChannelId", 8, (communicationChannelId))
 		if _communicationChannelIdErr != nil {
-			return errors.New("Error serializing 'communicationChannelId' field " + _communicationChannelIdErr.Error())
+			return errors.Wrap(_communicationChannelIdErr, "Error serializing 'communicationChannelId' field")
 		}
 
 		// Reserved Field (reserved)
 		{
-			_err := io.WriteUint8(8, uint8(0x00))
+			_err := io.WriteUint8("reserved", 8, uint8(0x00))
 			if _err != nil {
-				return errors.New("Error serializing 'reserved' field " + _err.Error())
+				return errors.Wrap(_err, "Error serializing 'reserved' field")
 			}
 		}
 
 		// Simple Field (hpaiControlEndpoint)
 		_hpaiControlEndpointErr := m.HpaiControlEndpoint.Serialize(io)
 		if _hpaiControlEndpointErr != nil {
-			return errors.New("Error serializing 'hpaiControlEndpoint' field " + _hpaiControlEndpointErr.Error())
+			return errors.Wrap(_hpaiControlEndpointErr, "Error serializing 'hpaiControlEndpoint' field")
 		}
 
+		io.PopContext("DisconnectRequest")
 		return nil
 	}
 	return m.Parent.SerializeParent(io, m, ser)
@@ -175,10 +183,12 @@ func (m *DisconnectRequest) Serialize(io utils.WriteBuffer) error {
 func (m *DisconnectRequest) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
 	var token xml.Token
 	var err error
+	foundContent := false
 	token = start
 	for {
 		switch token.(type) {
 		case xml.StartElement:
+			foundContent = true
 			tok := token.(xml.StartElement)
 			switch tok.Name.Local {
 			case "communicationChannelId":
@@ -188,16 +198,16 @@ func (m *DisconnectRequest) UnmarshalXML(d *xml.Decoder, start xml.StartElement)
 				}
 				m.CommunicationChannelId = data
 			case "hpaiControlEndpoint":
-				var data *HPAIControlEndpoint
-				if err := d.DecodeElement(data, &tok); err != nil {
+				var data HPAIControlEndpoint
+				if err := d.DecodeElement(&data, &tok); err != nil {
 					return err
 				}
-				m.HpaiControlEndpoint = data
+				m.HpaiControlEndpoint = &data
 			}
 		}
 		token, err = d.Token()
 		if err != nil {
-			if err == io.EOF {
+			if err == io.EOF && foundContent {
 				return nil
 			}
 			return err
@@ -213,4 +223,28 @@ func (m *DisconnectRequest) MarshalXML(e *xml.Encoder, start xml.StartElement) e
 		return err
 	}
 	return nil
+}
+
+func (m DisconnectRequest) String() string {
+	return string(m.Box("", 120))
+}
+
+func (m DisconnectRequest) Box(name string, width int) utils.AsciiBox {
+	boxName := "DisconnectRequest"
+	if name != "" {
+		boxName += "/" + name
+	}
+	childBoxer := func() []utils.AsciiBox {
+		boxes := make([]utils.AsciiBox, 0)
+		// Simple field (case simple)
+		// uint8 can be boxed as anything with the least amount of space
+		boxes = append(boxes, utils.BoxAnything("CommunicationChannelId", m.CommunicationChannelId, -1))
+		// Reserved Field (reserved)
+		// reserved field can be boxed as anything with the least amount of space
+		boxes = append(boxes, utils.BoxAnything("reserved", uint8(0x00), -1))
+		// Complex field (case complex)
+		boxes = append(boxes, m.HpaiControlEndpoint.Box("hpaiControlEndpoint", width-2))
+		return boxes
+	}
+	return m.Parent.BoxParent(boxName, width, childBoxer)
 }

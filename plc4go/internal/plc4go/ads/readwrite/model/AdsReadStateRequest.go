@@ -16,6 +16,7 @@
 // specific language governing permissions and limitations
 // under the License.
 //
+
 package model
 
 import (
@@ -37,6 +38,7 @@ type IAdsReadStateRequest interface {
 	LengthInBits() uint16
 	Serialize(io utils.WriteBuffer) error
 	xml.Marshaler
+	xml.Unmarshaler
 }
 
 ///////////////////////////////////////////////////////////
@@ -85,7 +87,11 @@ func (m *AdsReadStateRequest) GetTypeName() string {
 }
 
 func (m *AdsReadStateRequest) LengthInBits() uint16 {
-	lengthInBits := uint16(0)
+	return m.LengthInBitsConditional(false)
+}
+
+func (m *AdsReadStateRequest) LengthInBitsConditional(lastItem bool) uint16 {
+	lengthInBits := uint16(m.Parent.ParentLengthInBits())
 
 	return lengthInBits
 }
@@ -94,7 +100,7 @@ func (m *AdsReadStateRequest) LengthInBytes() uint16 {
 	return m.LengthInBits() / 8
 }
 
-func AdsReadStateRequestParse(io *utils.ReadBuffer) (*AdsData, error) {
+func AdsReadStateRequestParse(io utils.ReadBuffer) (*AdsData, error) {
 
 	// Create a partially initialized instance
 	_child := &AdsReadStateRequest{
@@ -106,7 +112,9 @@ func AdsReadStateRequestParse(io *utils.ReadBuffer) (*AdsData, error) {
 
 func (m *AdsReadStateRequest) Serialize(io utils.WriteBuffer) error {
 	ser := func() error {
+		io.PushContext("AdsReadStateRequest")
 
+		io.PopContext("AdsReadStateRequest")
 		return nil
 	}
 	return m.Parent.SerializeParent(io, m, ser)
@@ -115,17 +123,19 @@ func (m *AdsReadStateRequest) Serialize(io utils.WriteBuffer) error {
 func (m *AdsReadStateRequest) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
 	var token xml.Token
 	var err error
+	foundContent := false
 	token = start
 	for {
 		switch token.(type) {
 		case xml.StartElement:
+			foundContent = true
 			tok := token.(xml.StartElement)
 			switch tok.Name.Local {
 			}
 		}
 		token, err = d.Token()
 		if err != nil {
-			if err == io.EOF {
+			if err == io.EOF && foundContent {
 				return nil
 			}
 			return err
@@ -135,4 +145,20 @@ func (m *AdsReadStateRequest) UnmarshalXML(d *xml.Decoder, start xml.StartElemen
 
 func (m *AdsReadStateRequest) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
 	return nil
+}
+
+func (m AdsReadStateRequest) String() string {
+	return string(m.Box("", 120))
+}
+
+func (m AdsReadStateRequest) Box(name string, width int) utils.AsciiBox {
+	boxName := "AdsReadStateRequest"
+	if name != "" {
+		boxName += "/" + name
+	}
+	childBoxer := func() []utils.AsciiBox {
+		boxes := make([]utils.AsciiBox, 0)
+		return boxes
+	}
+	return m.Parent.BoxParent(boxName, width, childBoxer)
 }

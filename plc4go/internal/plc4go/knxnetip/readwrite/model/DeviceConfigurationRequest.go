@@ -16,12 +16,13 @@
 // specific language governing permissions and limitations
 // under the License.
 //
+
 package model
 
 import (
 	"encoding/xml"
-	"errors"
 	"github.com/apache/plc4x/plc4go/internal/plc4go/spi/utils"
+	"github.com/pkg/errors"
 	"io"
 )
 
@@ -40,6 +41,7 @@ type IDeviceConfigurationRequest interface {
 	LengthInBits() uint16
 	Serialize(io utils.WriteBuffer) error
 	xml.Marshaler
+	xml.Unmarshaler
 }
 
 ///////////////////////////////////////////////////////////
@@ -86,7 +88,11 @@ func (m *DeviceConfigurationRequest) GetTypeName() string {
 }
 
 func (m *DeviceConfigurationRequest) LengthInBits() uint16 {
-	lengthInBits := uint16(0)
+	return m.LengthInBitsConditional(false)
+}
+
+func (m *DeviceConfigurationRequest) LengthInBitsConditional(lastItem bool) uint16 {
+	lengthInBits := uint16(m.Parent.ParentLengthInBits())
 
 	// Simple field (deviceConfigurationRequestDataBlock)
 	lengthInBits += m.DeviceConfigurationRequestDataBlock.LengthInBits()
@@ -101,18 +107,18 @@ func (m *DeviceConfigurationRequest) LengthInBytes() uint16 {
 	return m.LengthInBits() / 8
 }
 
-func DeviceConfigurationRequestParse(io *utils.ReadBuffer, totalLength uint16) (*KnxNetIpMessage, error) {
+func DeviceConfigurationRequestParse(io utils.ReadBuffer, totalLength uint16) (*KnxNetIpMessage, error) {
 
 	// Simple Field (deviceConfigurationRequestDataBlock)
 	deviceConfigurationRequestDataBlock, _deviceConfigurationRequestDataBlockErr := DeviceConfigurationRequestDataBlockParse(io)
 	if _deviceConfigurationRequestDataBlockErr != nil {
-		return nil, errors.New("Error parsing 'deviceConfigurationRequestDataBlock' field " + _deviceConfigurationRequestDataBlockErr.Error())
+		return nil, errors.Wrap(_deviceConfigurationRequestDataBlockErr, "Error parsing 'deviceConfigurationRequestDataBlock' field")
 	}
 
 	// Simple Field (cemi)
 	cemi, _cemiErr := CEMIParse(io, uint8(totalLength)-uint8(uint8(uint8(uint8(6))+uint8(deviceConfigurationRequestDataBlock.LengthInBytes()))))
 	if _cemiErr != nil {
-		return nil, errors.New("Error parsing 'cemi' field " + _cemiErr.Error())
+		return nil, errors.Wrap(_cemiErr, "Error parsing 'cemi' field")
 	}
 
 	// Create a partially initialized instance
@@ -127,19 +133,21 @@ func DeviceConfigurationRequestParse(io *utils.ReadBuffer, totalLength uint16) (
 
 func (m *DeviceConfigurationRequest) Serialize(io utils.WriteBuffer) error {
 	ser := func() error {
+		io.PushContext("DeviceConfigurationRequest")
 
 		// Simple Field (deviceConfigurationRequestDataBlock)
 		_deviceConfigurationRequestDataBlockErr := m.DeviceConfigurationRequestDataBlock.Serialize(io)
 		if _deviceConfigurationRequestDataBlockErr != nil {
-			return errors.New("Error serializing 'deviceConfigurationRequestDataBlock' field " + _deviceConfigurationRequestDataBlockErr.Error())
+			return errors.Wrap(_deviceConfigurationRequestDataBlockErr, "Error serializing 'deviceConfigurationRequestDataBlock' field")
 		}
 
 		// Simple Field (cemi)
 		_cemiErr := m.Cemi.Serialize(io)
 		if _cemiErr != nil {
-			return errors.New("Error serializing 'cemi' field " + _cemiErr.Error())
+			return errors.Wrap(_cemiErr, "Error serializing 'cemi' field")
 		}
 
+		io.PopContext("DeviceConfigurationRequest")
 		return nil
 	}
 	return m.Parent.SerializeParent(io, m, ser)
@@ -148,21 +156,26 @@ func (m *DeviceConfigurationRequest) Serialize(io utils.WriteBuffer) error {
 func (m *DeviceConfigurationRequest) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
 	var token xml.Token
 	var err error
+	foundContent := false
 	token = start
 	for {
 		switch token.(type) {
 		case xml.StartElement:
+			foundContent = true
 			tok := token.(xml.StartElement)
 			switch tok.Name.Local {
 			case "deviceConfigurationRequestDataBlock":
-				var data *DeviceConfigurationRequestDataBlock
-				if err := d.DecodeElement(data, &tok); err != nil {
+				var data DeviceConfigurationRequestDataBlock
+				if err := d.DecodeElement(&data, &tok); err != nil {
 					return err
 				}
-				m.DeviceConfigurationRequestDataBlock = data
+				m.DeviceConfigurationRequestDataBlock = &data
 			case "cemi":
 				var dt *CEMI
 				if err := d.DecodeElement(&dt, &tok); err != nil {
+					if err == io.EOF {
+						continue
+					}
 					return err
 				}
 				m.Cemi = dt
@@ -170,7 +183,7 @@ func (m *DeviceConfigurationRequest) UnmarshalXML(d *xml.Decoder, start xml.Star
 		}
 		token, err = d.Token()
 		if err != nil {
-			if err == io.EOF {
+			if err == io.EOF && foundContent {
 				return nil
 			}
 			return err
@@ -186,4 +199,24 @@ func (m *DeviceConfigurationRequest) MarshalXML(e *xml.Encoder, start xml.StartE
 		return err
 	}
 	return nil
+}
+
+func (m DeviceConfigurationRequest) String() string {
+	return string(m.Box("", 120))
+}
+
+func (m DeviceConfigurationRequest) Box(name string, width int) utils.AsciiBox {
+	boxName := "DeviceConfigurationRequest"
+	if name != "" {
+		boxName += "/" + name
+	}
+	childBoxer := func() []utils.AsciiBox {
+		boxes := make([]utils.AsciiBox, 0)
+		// Complex field (case complex)
+		boxes = append(boxes, m.DeviceConfigurationRequestDataBlock.Box("deviceConfigurationRequestDataBlock", width-2))
+		// Complex field (case complex)
+		boxes = append(boxes, m.Cemi.Box("cemi", width-2))
+		return boxes
+	}
+	return m.Parent.BoxParent(boxName, width, childBoxer)
 }

@@ -16,12 +16,13 @@
 // specific language governing permissions and limitations
 // under the License.
 //
+
 package model
 
 import (
 	"encoding/xml"
-	"errors"
 	"github.com/apache/plc4x/plc4go/internal/plc4go/spi/utils"
+	"github.com/pkg/errors"
 	"io"
 )
 
@@ -39,6 +40,7 @@ type IDIBSuppSvcFamilies interface {
 	LengthInBits() uint16
 	Serialize(io utils.WriteBuffer) error
 	xml.Marshaler
+	xml.Unmarshaler
 }
 
 func NewDIBSuppSvcFamilies(descriptionType uint8, serviceIds []*ServiceId) *DIBSuppSvcFamilies {
@@ -63,6 +65,10 @@ func (m *DIBSuppSvcFamilies) GetTypeName() string {
 }
 
 func (m *DIBSuppSvcFamilies) LengthInBits() uint16 {
+	return m.LengthInBitsConditional(false)
+}
+
+func (m *DIBSuppSvcFamilies) LengthInBitsConditional(lastItem bool) uint16 {
 	lengthInBits := uint16(0)
 
 	// Implicit Field (structureLength)
@@ -85,18 +91,19 @@ func (m *DIBSuppSvcFamilies) LengthInBytes() uint16 {
 	return m.LengthInBits() / 8
 }
 
-func DIBSuppSvcFamiliesParse(io *utils.ReadBuffer) (*DIBSuppSvcFamilies, error) {
+func DIBSuppSvcFamiliesParse(io utils.ReadBuffer) (*DIBSuppSvcFamilies, error) {
 
 	// Implicit Field (structureLength) (Used for parsing, but it's value is not stored as it's implicitly given by the objects content)
 	structureLength, _structureLengthErr := io.ReadUint8(8)
+	_ = structureLength
 	if _structureLengthErr != nil {
-		return nil, errors.New("Error parsing 'structureLength' field " + _structureLengthErr.Error())
+		return nil, errors.Wrap(_structureLengthErr, "Error parsing 'structureLength' field")
 	}
 
 	// Simple Field (descriptionType)
 	descriptionType, _descriptionTypeErr := io.ReadUint8(8)
 	if _descriptionTypeErr != nil {
-		return nil, errors.New("Error parsing 'descriptionType' field " + _descriptionTypeErr.Error())
+		return nil, errors.Wrap(_descriptionTypeErr, "Error parsing 'descriptionType' field")
 	}
 
 	// Array field (serviceIds)
@@ -107,7 +114,7 @@ func DIBSuppSvcFamiliesParse(io *utils.ReadBuffer) (*DIBSuppSvcFamilies, error) 
 	for io.GetPos() < _serviceIdsEndPos {
 		_item, _err := ServiceIdParse(io)
 		if _err != nil {
-			return nil, errors.New("Error parsing 'serviceIds' field " + _err.Error())
+			return nil, errors.Wrap(_err, "Error parsing 'serviceIds' field")
 		}
 		serviceIds = append(serviceIds, _item)
 	}
@@ -117,19 +124,20 @@ func DIBSuppSvcFamiliesParse(io *utils.ReadBuffer) (*DIBSuppSvcFamilies, error) 
 }
 
 func (m *DIBSuppSvcFamilies) Serialize(io utils.WriteBuffer) error {
+	io.PushContext("DIBSuppSvcFamilies")
 
 	// Implicit Field (structureLength) (Used for parsing, but it's value is not stored as it's implicitly given by the objects content)
 	structureLength := uint8(uint8(m.LengthInBytes()))
-	_structureLengthErr := io.WriteUint8(8, (structureLength))
+	_structureLengthErr := io.WriteUint8("structureLength", 8, (structureLength))
 	if _structureLengthErr != nil {
-		return errors.New("Error serializing 'structureLength' field " + _structureLengthErr.Error())
+		return errors.Wrap(_structureLengthErr, "Error serializing 'structureLength' field")
 	}
 
 	// Simple Field (descriptionType)
 	descriptionType := uint8(m.DescriptionType)
-	_descriptionTypeErr := io.WriteUint8(8, (descriptionType))
+	_descriptionTypeErr := io.WriteUint8("descriptionType", 8, (descriptionType))
 	if _descriptionTypeErr != nil {
-		return errors.New("Error serializing 'descriptionType' field " + _descriptionTypeErr.Error())
+		return errors.Wrap(_descriptionTypeErr, "Error serializing 'descriptionType' field")
 	}
 
 	// Array Field (serviceIds)
@@ -137,27 +145,30 @@ func (m *DIBSuppSvcFamilies) Serialize(io utils.WriteBuffer) error {
 		for _, _element := range m.ServiceIds {
 			_elementErr := _element.Serialize(io)
 			if _elementErr != nil {
-				return errors.New("Error serializing 'serviceIds' field " + _elementErr.Error())
+				return errors.Wrap(_elementErr, "Error serializing 'serviceIds' field")
 			}
 		}
 	}
 
+	io.PopContext("DIBSuppSvcFamilies")
 	return nil
 }
 
 func (m *DIBSuppSvcFamilies) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
 	var token xml.Token
 	var err error
+	foundContent := false
 	for {
 		token, err = d.Token()
 		if err != nil {
-			if err == io.EOF {
+			if err == io.EOF && foundContent {
 				return nil
 			}
 			return err
 		}
 		switch token.(type) {
 		case xml.StartElement:
+			foundContent = true
 			tok := token.(xml.StartElement)
 			switch tok.Name.Local {
 			case "descriptionType":
@@ -167,13 +178,21 @@ func (m *DIBSuppSvcFamilies) UnmarshalXML(d *xml.Decoder, start xml.StartElement
 				}
 				m.DescriptionType = data
 			case "serviceIds":
-				var _values []*ServiceId
-				var dt *ServiceId
-				if err := d.DecodeElement(&dt, &tok); err != nil {
-					return err
+			arrayLoop:
+				for {
+					token, err = d.Token()
+					switch token.(type) {
+					case xml.StartElement:
+						tok := token.(xml.StartElement)
+						var dt *ServiceId
+						if err := d.DecodeElement(&dt, &tok); err != nil {
+							return err
+						}
+						m.ServiceIds = append(m.ServiceIds, dt)
+					default:
+						break arrayLoop
+					}
 				}
-				_values = append(_values, dt)
-				m.ServiceIds = _values
 			}
 		}
 	}
@@ -192,8 +211,10 @@ func (m *DIBSuppSvcFamilies) MarshalXML(e *xml.Encoder, start xml.StartElement) 
 	if err := e.EncodeToken(xml.StartElement{Name: xml.Name{Local: "serviceIds"}}); err != nil {
 		return err
 	}
-	if err := e.EncodeElement(m.ServiceIds, xml.StartElement{Name: xml.Name{Local: "serviceIds"}}); err != nil {
-		return err
+	for _, arrayElement := range m.ServiceIds {
+		if err := e.EncodeElement(arrayElement, xml.StartElement{Name: xml.Name{Local: "serviceIds"}}); err != nil {
+			return err
+		}
 	}
 	if err := e.EncodeToken(xml.EndElement{Name: xml.Name{Local: "serviceIds"}}); err != nil {
 		return err
@@ -202,4 +223,33 @@ func (m *DIBSuppSvcFamilies) MarshalXML(e *xml.Encoder, start xml.StartElement) 
 		return err
 	}
 	return nil
+}
+
+func (m DIBSuppSvcFamilies) String() string {
+	return string(m.Box("", 120))
+}
+
+func (m DIBSuppSvcFamilies) Box(name string, width int) utils.AsciiBox {
+	boxName := "DIBSuppSvcFamilies"
+	if name != "" {
+		boxName += "/" + name
+	}
+	boxes := make([]utils.AsciiBox, 0)
+	// Implicit Field (structureLength)
+	structureLength := uint8(uint8(m.LengthInBytes()))
+	// uint8 can be boxed as anything with the least amount of space
+	boxes = append(boxes, utils.BoxAnything("StructureLength", structureLength, -1))
+	// Simple field (case simple)
+	// uint8 can be boxed as anything with the least amount of space
+	boxes = append(boxes, utils.BoxAnything("DescriptionType", m.DescriptionType, -1))
+	// Array Field (serviceIds)
+	if m.ServiceIds != nil {
+		// Complex array base type
+		arrayBoxes := make([]utils.AsciiBox, 0)
+		for _, _element := range m.ServiceIds {
+			arrayBoxes = append(arrayBoxes, utils.BoxAnything("", _element, width-2))
+		}
+		boxes = append(boxes, utils.BoxBox("ServiceIds", utils.AlignBoxes(arrayBoxes, width-4), 0))
+	}
+	return utils.BoxBox(boxName, utils.AlignBoxes(boxes, width-2), 0)
 }

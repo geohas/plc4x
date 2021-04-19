@@ -16,12 +16,13 @@
 // specific language governing permissions and limitations
 // under the License.
 //
+
 package model
 
 import (
 	"encoding/xml"
-	"errors"
 	"github.com/apache/plc4x/plc4go/internal/plc4go/spi/utils"
+	"github.com/pkg/errors"
 	"io"
 )
 
@@ -41,6 +42,7 @@ type IBVLCForwardedNPDU interface {
 	LengthInBits() uint16
 	Serialize(io utils.WriteBuffer) error
 	xml.Marshaler
+	xml.Unmarshaler
 }
 
 ///////////////////////////////////////////////////////////
@@ -88,7 +90,11 @@ func (m *BVLCForwardedNPDU) GetTypeName() string {
 }
 
 func (m *BVLCForwardedNPDU) LengthInBits() uint16 {
-	lengthInBits := uint16(0)
+	return m.LengthInBitsConditional(false)
+}
+
+func (m *BVLCForwardedNPDU) LengthInBitsConditional(lastItem bool) uint16 {
+	lengthInBits := uint16(m.Parent.ParentLengthInBits())
 
 	// Array field
 	if len(m.Ip) > 0 {
@@ -108,7 +114,7 @@ func (m *BVLCForwardedNPDU) LengthInBytes() uint16 {
 	return m.LengthInBits() / 8
 }
 
-func BVLCForwardedNPDUParse(io *utils.ReadBuffer, bvlcLength uint16) (*BVLC, error) {
+func BVLCForwardedNPDUParse(io utils.ReadBuffer, bvlcLength uint16) (*BVLC, error) {
 
 	// Array field (ip)
 	// Count array
@@ -116,7 +122,7 @@ func BVLCForwardedNPDUParse(io *utils.ReadBuffer, bvlcLength uint16) (*BVLC, err
 	for curItem := uint16(0); curItem < uint16(uint16(4)); curItem++ {
 		_item, _err := io.ReadUint8(8)
 		if _err != nil {
-			return nil, errors.New("Error parsing 'ip' field " + _err.Error())
+			return nil, errors.Wrap(_err, "Error parsing 'ip' field")
 		}
 		ip[curItem] = _item
 	}
@@ -124,13 +130,13 @@ func BVLCForwardedNPDUParse(io *utils.ReadBuffer, bvlcLength uint16) (*BVLC, err
 	// Simple Field (port)
 	port, _portErr := io.ReadUint16(16)
 	if _portErr != nil {
-		return nil, errors.New("Error parsing 'port' field " + _portErr.Error())
+		return nil, errors.Wrap(_portErr, "Error parsing 'port' field")
 	}
 
 	// Simple Field (npdu)
 	npdu, _npduErr := NPDUParse(io, uint16(bvlcLength)-uint16(uint16(10)))
 	if _npduErr != nil {
-		return nil, errors.New("Error parsing 'npdu' field " + _npduErr.Error())
+		return nil, errors.Wrap(_npduErr, "Error parsing 'npdu' field")
 	}
 
 	// Create a partially initialized instance
@@ -146,30 +152,32 @@ func BVLCForwardedNPDUParse(io *utils.ReadBuffer, bvlcLength uint16) (*BVLC, err
 
 func (m *BVLCForwardedNPDU) Serialize(io utils.WriteBuffer) error {
 	ser := func() error {
+		io.PushContext("BVLCForwardedNPDU")
 
 		// Array Field (ip)
 		if m.Ip != nil {
 			for _, _element := range m.Ip {
-				_elementErr := io.WriteUint8(8, _element)
+				_elementErr := io.WriteUint8("", 8, _element)
 				if _elementErr != nil {
-					return errors.New("Error serializing 'ip' field " + _elementErr.Error())
+					return errors.Wrap(_elementErr, "Error serializing 'ip' field")
 				}
 			}
 		}
 
 		// Simple Field (port)
 		port := uint16(m.Port)
-		_portErr := io.WriteUint16(16, (port))
+		_portErr := io.WriteUint16("port", 16, (port))
 		if _portErr != nil {
-			return errors.New("Error serializing 'port' field " + _portErr.Error())
+			return errors.Wrap(_portErr, "Error serializing 'port' field")
 		}
 
 		// Simple Field (npdu)
 		_npduErr := m.Npdu.Serialize(io)
 		if _npduErr != nil {
-			return errors.New("Error serializing 'npdu' field " + _npduErr.Error())
+			return errors.Wrap(_npduErr, "Error serializing 'npdu' field")
 		}
 
+		io.PopContext("BVLCForwardedNPDU")
 		return nil
 	}
 	return m.Parent.SerializeParent(io, m, ser)
@@ -178,10 +186,12 @@ func (m *BVLCForwardedNPDU) Serialize(io utils.WriteBuffer) error {
 func (m *BVLCForwardedNPDU) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
 	var token xml.Token
 	var err error
+	foundContent := false
 	token = start
 	for {
 		switch token.(type) {
 		case xml.StartElement:
+			foundContent = true
 			tok := token.(xml.StartElement)
 			switch tok.Name.Local {
 			case "ip":
@@ -197,16 +207,16 @@ func (m *BVLCForwardedNPDU) UnmarshalXML(d *xml.Decoder, start xml.StartElement)
 				}
 				m.Port = data
 			case "npdu":
-				var data *NPDU
-				if err := d.DecodeElement(data, &tok); err != nil {
+				var data NPDU
+				if err := d.DecodeElement(&data, &tok); err != nil {
 					return err
 				}
-				m.Npdu = data
+				m.Npdu = &data
 			}
 		}
 		token, err = d.Token()
 		if err != nil {
-			if err == io.EOF {
+			if err == io.EOF && foundContent {
 				return nil
 			}
 			return err
@@ -215,13 +225,7 @@ func (m *BVLCForwardedNPDU) UnmarshalXML(d *xml.Decoder, start xml.StartElement)
 }
 
 func (m *BVLCForwardedNPDU) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
-	if err := e.EncodeToken(xml.StartElement{Name: xml.Name{Local: "ip"}}); err != nil {
-		return err
-	}
 	if err := e.EncodeElement(m.Ip, xml.StartElement{Name: xml.Name{Local: "ip"}}); err != nil {
-		return err
-	}
-	if err := e.EncodeToken(xml.EndElement{Name: xml.Name{Local: "ip"}}); err != nil {
 		return err
 	}
 	if err := e.EncodeElement(m.Port, xml.StartElement{Name: xml.Name{Local: "port"}}); err != nil {
@@ -231,4 +235,36 @@ func (m *BVLCForwardedNPDU) MarshalXML(e *xml.Encoder, start xml.StartElement) e
 		return err
 	}
 	return nil
+}
+
+func (m BVLCForwardedNPDU) String() string {
+	return string(m.Box("", 120))
+}
+
+func (m BVLCForwardedNPDU) Box(name string, width int) utils.AsciiBox {
+	boxName := "BVLCForwardedNPDU"
+	if name != "" {
+		boxName += "/" + name
+	}
+	childBoxer := func() []utils.AsciiBox {
+		boxes := make([]utils.AsciiBox, 0)
+		// Array Field (ip)
+		if m.Ip != nil {
+			// Simple array base type uint8 will be hex dumped
+			boxes = append(boxes, utils.BoxedDumpAnything("Ip", m.Ip))
+			// Simple array base type uint8 will be rendered one by one
+			arrayBoxes := make([]utils.AsciiBox, 0)
+			for _, _element := range m.Ip {
+				arrayBoxes = append(arrayBoxes, utils.BoxAnything("", _element, width-2))
+			}
+			boxes = append(boxes, utils.BoxBox("Ip", utils.AlignBoxes(arrayBoxes, width-4), 0))
+		}
+		// Simple field (case simple)
+		// uint16 can be boxed as anything with the least amount of space
+		boxes = append(boxes, utils.BoxAnything("Port", m.Port, -1))
+		// Complex field (case complex)
+		boxes = append(boxes, m.Npdu.Box("npdu", width-2))
+		return boxes
+	}
+	return m.Parent.BoxParent(boxName, width, childBoxer)
 }

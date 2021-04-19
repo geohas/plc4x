@@ -16,12 +16,13 @@
 // specific language governing permissions and limitations
 // under the License.
 //
+
 package model
 
 import (
 	"encoding/xml"
-	"errors"
 	"github.com/apache/plc4x/plc4go/internal/plc4go/spi/utils"
+	"github.com/pkg/errors"
 	"io"
 )
 
@@ -40,6 +41,7 @@ type ICOTPPacketData interface {
 	LengthInBits() uint16
 	Serialize(io utils.WriteBuffer) error
 	xml.Marshaler
+	xml.Unmarshaler
 }
 
 ///////////////////////////////////////////////////////////
@@ -88,7 +90,11 @@ func (m *COTPPacketData) GetTypeName() string {
 }
 
 func (m *COTPPacketData) LengthInBits() uint16 {
-	lengthInBits := uint16(0)
+	return m.LengthInBitsConditional(false)
+}
+
+func (m *COTPPacketData) LengthInBitsConditional(lastItem bool) uint16 {
+	lengthInBits := uint16(m.Parent.ParentLengthInBits())
 
 	// Simple field (eot)
 	lengthInBits += 1
@@ -103,18 +109,18 @@ func (m *COTPPacketData) LengthInBytes() uint16 {
 	return m.LengthInBits() / 8
 }
 
-func COTPPacketDataParse(io *utils.ReadBuffer) (*COTPPacket, error) {
+func COTPPacketDataParse(io utils.ReadBuffer) (*COTPPacket, error) {
 
 	// Simple Field (eot)
 	eot, _eotErr := io.ReadBit()
 	if _eotErr != nil {
-		return nil, errors.New("Error parsing 'eot' field " + _eotErr.Error())
+		return nil, errors.Wrap(_eotErr, "Error parsing 'eot' field")
 	}
 
 	// Simple Field (tpduRef)
 	tpduRef, _tpduRefErr := io.ReadUint8(7)
 	if _tpduRefErr != nil {
-		return nil, errors.New("Error parsing 'tpduRef' field " + _tpduRefErr.Error())
+		return nil, errors.Wrap(_tpduRefErr, "Error parsing 'tpduRef' field")
 	}
 
 	// Create a partially initialized instance
@@ -129,21 +135,23 @@ func COTPPacketDataParse(io *utils.ReadBuffer) (*COTPPacket, error) {
 
 func (m *COTPPacketData) Serialize(io utils.WriteBuffer) error {
 	ser := func() error {
+		io.PushContext("COTPPacketData")
 
 		// Simple Field (eot)
 		eot := bool(m.Eot)
-		_eotErr := io.WriteBit((eot))
+		_eotErr := io.WriteBit("eot", (eot))
 		if _eotErr != nil {
-			return errors.New("Error serializing 'eot' field " + _eotErr.Error())
+			return errors.Wrap(_eotErr, "Error serializing 'eot' field")
 		}
 
 		// Simple Field (tpduRef)
 		tpduRef := uint8(m.TpduRef)
-		_tpduRefErr := io.WriteUint8(7, (tpduRef))
+		_tpduRefErr := io.WriteUint8("tpduRef", 7, (tpduRef))
 		if _tpduRefErr != nil {
-			return errors.New("Error serializing 'tpduRef' field " + _tpduRefErr.Error())
+			return errors.Wrap(_tpduRefErr, "Error serializing 'tpduRef' field")
 		}
 
+		io.PopContext("COTPPacketData")
 		return nil
 	}
 	return m.Parent.SerializeParent(io, m, ser)
@@ -152,10 +160,12 @@ func (m *COTPPacketData) Serialize(io utils.WriteBuffer) error {
 func (m *COTPPacketData) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
 	var token xml.Token
 	var err error
+	foundContent := false
 	token = start
 	for {
 		switch token.(type) {
 		case xml.StartElement:
+			foundContent = true
 			tok := token.(xml.StartElement)
 			switch tok.Name.Local {
 			case "eot":
@@ -174,7 +184,7 @@ func (m *COTPPacketData) UnmarshalXML(d *xml.Decoder, start xml.StartElement) er
 		}
 		token, err = d.Token()
 		if err != nil {
-			if err == io.EOF {
+			if err == io.EOF && foundContent {
 				return nil
 			}
 			return err
@@ -190,4 +200,26 @@ func (m *COTPPacketData) MarshalXML(e *xml.Encoder, start xml.StartElement) erro
 		return err
 	}
 	return nil
+}
+
+func (m COTPPacketData) String() string {
+	return string(m.Box("", 120))
+}
+
+func (m COTPPacketData) Box(name string, width int) utils.AsciiBox {
+	boxName := "COTPPacketData"
+	if name != "" {
+		boxName += "/" + name
+	}
+	childBoxer := func() []utils.AsciiBox {
+		boxes := make([]utils.AsciiBox, 0)
+		// Simple field (case simple)
+		// bool can be boxed as anything with the least amount of space
+		boxes = append(boxes, utils.BoxAnything("Eot", m.Eot, -1))
+		// Simple field (case simple)
+		// uint8 can be boxed as anything with the least amount of space
+		boxes = append(boxes, utils.BoxAnything("TpduRef", m.TpduRef, -1))
+		return boxes
+	}
+	return m.Parent.BoxParent(boxName, width, childBoxer)
 }

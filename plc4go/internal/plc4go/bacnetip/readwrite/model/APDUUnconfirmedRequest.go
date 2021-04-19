@@ -16,12 +16,13 @@
 // specific language governing permissions and limitations
 // under the License.
 //
+
 package model
 
 import (
 	"encoding/xml"
-	"errors"
 	"github.com/apache/plc4x/plc4go/internal/plc4go/spi/utils"
+	"github.com/pkg/errors"
 	"github.com/rs/zerolog/log"
 	"io"
 )
@@ -40,6 +41,7 @@ type IAPDUUnconfirmedRequest interface {
 	LengthInBits() uint16
 	Serialize(io utils.WriteBuffer) error
 	xml.Marshaler
+	xml.Unmarshaler
 }
 
 ///////////////////////////////////////////////////////////
@@ -85,7 +87,11 @@ func (m *APDUUnconfirmedRequest) GetTypeName() string {
 }
 
 func (m *APDUUnconfirmedRequest) LengthInBits() uint16 {
-	lengthInBits := uint16(0)
+	return m.LengthInBitsConditional(false)
+}
+
+func (m *APDUUnconfirmedRequest) LengthInBitsConditional(lastItem bool) uint16 {
+	lengthInBits := uint16(m.Parent.ParentLengthInBits())
 
 	// Reserved Field (reserved)
 	lengthInBits += 4
@@ -100,13 +106,13 @@ func (m *APDUUnconfirmedRequest) LengthInBytes() uint16 {
 	return m.LengthInBits() / 8
 }
 
-func APDUUnconfirmedRequestParse(io *utils.ReadBuffer, apduLength uint16) (*APDU, error) {
+func APDUUnconfirmedRequestParse(io utils.ReadBuffer, apduLength uint16) (*APDU, error) {
 
 	// Reserved Field (Compartmentalized so the "reserved" variable can't leak)
 	{
 		reserved, _err := io.ReadUint8(4)
 		if _err != nil {
-			return nil, errors.New("Error parsing 'reserved' field " + _err.Error())
+			return nil, errors.Wrap(_err, "Error parsing 'reserved' field")
 		}
 		if reserved != uint8(0) {
 			log.Info().Fields(map[string]interface{}{
@@ -119,7 +125,7 @@ func APDUUnconfirmedRequestParse(io *utils.ReadBuffer, apduLength uint16) (*APDU
 	// Simple Field (serviceRequest)
 	serviceRequest, _serviceRequestErr := BACnetUnconfirmedServiceRequestParse(io, uint16(apduLength)-uint16(uint16(1)))
 	if _serviceRequestErr != nil {
-		return nil, errors.New("Error parsing 'serviceRequest' field " + _serviceRequestErr.Error())
+		return nil, errors.Wrap(_serviceRequestErr, "Error parsing 'serviceRequest' field")
 	}
 
 	// Create a partially initialized instance
@@ -133,21 +139,23 @@ func APDUUnconfirmedRequestParse(io *utils.ReadBuffer, apduLength uint16) (*APDU
 
 func (m *APDUUnconfirmedRequest) Serialize(io utils.WriteBuffer) error {
 	ser := func() error {
+		io.PushContext("APDUUnconfirmedRequest")
 
 		// Reserved Field (reserved)
 		{
-			_err := io.WriteUint8(4, uint8(0))
+			_err := io.WriteUint8("reserved", 4, uint8(0))
 			if _err != nil {
-				return errors.New("Error serializing 'reserved' field " + _err.Error())
+				return errors.Wrap(_err, "Error serializing 'reserved' field")
 			}
 		}
 
 		// Simple Field (serviceRequest)
 		_serviceRequestErr := m.ServiceRequest.Serialize(io)
 		if _serviceRequestErr != nil {
-			return errors.New("Error serializing 'serviceRequest' field " + _serviceRequestErr.Error())
+			return errors.Wrap(_serviceRequestErr, "Error serializing 'serviceRequest' field")
 		}
 
+		io.PopContext("APDUUnconfirmedRequest")
 		return nil
 	}
 	return m.Parent.SerializeParent(io, m, ser)
@@ -156,15 +164,20 @@ func (m *APDUUnconfirmedRequest) Serialize(io utils.WriteBuffer) error {
 func (m *APDUUnconfirmedRequest) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
 	var token xml.Token
 	var err error
+	foundContent := false
 	token = start
 	for {
 		switch token.(type) {
 		case xml.StartElement:
+			foundContent = true
 			tok := token.(xml.StartElement)
 			switch tok.Name.Local {
 			case "serviceRequest":
 				var dt *BACnetUnconfirmedServiceRequest
 				if err := d.DecodeElement(&dt, &tok); err != nil {
+					if err == io.EOF {
+						continue
+					}
 					return err
 				}
 				m.ServiceRequest = dt
@@ -172,7 +185,7 @@ func (m *APDUUnconfirmedRequest) UnmarshalXML(d *xml.Decoder, start xml.StartEle
 		}
 		token, err = d.Token()
 		if err != nil {
-			if err == io.EOF {
+			if err == io.EOF && foundContent {
 				return nil
 			}
 			return err
@@ -185,4 +198,25 @@ func (m *APDUUnconfirmedRequest) MarshalXML(e *xml.Encoder, start xml.StartEleme
 		return err
 	}
 	return nil
+}
+
+func (m APDUUnconfirmedRequest) String() string {
+	return string(m.Box("", 120))
+}
+
+func (m APDUUnconfirmedRequest) Box(name string, width int) utils.AsciiBox {
+	boxName := "APDUUnconfirmedRequest"
+	if name != "" {
+		boxName += "/" + name
+	}
+	childBoxer := func() []utils.AsciiBox {
+		boxes := make([]utils.AsciiBox, 0)
+		// Reserved Field (reserved)
+		// reserved field can be boxed as anything with the least amount of space
+		boxes = append(boxes, utils.BoxAnything("reserved", uint8(0), -1))
+		// Complex field (case complex)
+		boxes = append(boxes, m.ServiceRequest.Box("serviceRequest", width-2))
+		return boxes
+	}
+	return m.Parent.BoxParent(boxName, width, childBoxer)
 }

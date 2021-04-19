@@ -16,13 +16,14 @@
 // specific language governing permissions and limitations
 // under the License.
 //
+
 package model
 
 import (
 	"encoding/hex"
 	"encoding/xml"
-	"errors"
 	"github.com/apache/plc4x/plc4go/internal/plc4go/spi/utils"
+	"github.com/pkg/errors"
 	"io"
 	"strings"
 )
@@ -46,6 +47,7 @@ type ILDataExtended interface {
 	LengthInBits() uint16
 	Serialize(io utils.WriteBuffer) error
 	xml.Marshaler
+	xml.Unmarshaler
 }
 
 ///////////////////////////////////////////////////////////
@@ -105,7 +107,11 @@ func (m *LDataExtended) GetTypeName() string {
 }
 
 func (m *LDataExtended) LengthInBits() uint16 {
-	lengthInBits := uint16(0)
+	return m.LengthInBitsConditional(false)
+}
+
+func (m *LDataExtended) LengthInBitsConditional(lastItem bool) uint16 {
+	lengthInBits := uint16(m.Parent.ParentLengthInBits())
 
 	// Simple field (groupAddress)
 	lengthInBits += 1
@@ -137,30 +143,30 @@ func (m *LDataExtended) LengthInBytes() uint16 {
 	return m.LengthInBits() / 8
 }
 
-func LDataExtendedParse(io *utils.ReadBuffer) (*LDataFrame, error) {
+func LDataExtendedParse(io utils.ReadBuffer) (*LDataFrame, error) {
 
 	// Simple Field (groupAddress)
 	groupAddress, _groupAddressErr := io.ReadBit()
 	if _groupAddressErr != nil {
-		return nil, errors.New("Error parsing 'groupAddress' field " + _groupAddressErr.Error())
+		return nil, errors.Wrap(_groupAddressErr, "Error parsing 'groupAddress' field")
 	}
 
 	// Simple Field (hopCount)
 	hopCount, _hopCountErr := io.ReadUint8(3)
 	if _hopCountErr != nil {
-		return nil, errors.New("Error parsing 'hopCount' field " + _hopCountErr.Error())
+		return nil, errors.Wrap(_hopCountErr, "Error parsing 'hopCount' field")
 	}
 
 	// Simple Field (extendedFrameFormat)
 	extendedFrameFormat, _extendedFrameFormatErr := io.ReadUint8(4)
 	if _extendedFrameFormatErr != nil {
-		return nil, errors.New("Error parsing 'extendedFrameFormat' field " + _extendedFrameFormatErr.Error())
+		return nil, errors.Wrap(_extendedFrameFormatErr, "Error parsing 'extendedFrameFormat' field")
 	}
 
 	// Simple Field (sourceAddress)
 	sourceAddress, _sourceAddressErr := KnxAddressParse(io)
 	if _sourceAddressErr != nil {
-		return nil, errors.New("Error parsing 'sourceAddress' field " + _sourceAddressErr.Error())
+		return nil, errors.Wrap(_sourceAddressErr, "Error parsing 'sourceAddress' field")
 	}
 
 	// Array field (destinationAddress)
@@ -169,21 +175,22 @@ func LDataExtendedParse(io *utils.ReadBuffer) (*LDataFrame, error) {
 	for curItem := uint16(0); curItem < uint16(uint16(2)); curItem++ {
 		_item, _err := io.ReadInt8(8)
 		if _err != nil {
-			return nil, errors.New("Error parsing 'destinationAddress' field " + _err.Error())
+			return nil, errors.Wrap(_err, "Error parsing 'destinationAddress' field")
 		}
 		destinationAddress[curItem] = _item
 	}
 
 	// Implicit Field (dataLength) (Used for parsing, but it's value is not stored as it's implicitly given by the objects content)
 	dataLength, _dataLengthErr := io.ReadUint8(8)
+	_ = dataLength
 	if _dataLengthErr != nil {
-		return nil, errors.New("Error parsing 'dataLength' field " + _dataLengthErr.Error())
+		return nil, errors.Wrap(_dataLengthErr, "Error parsing 'dataLength' field")
 	}
 
 	// Simple Field (apdu)
 	apdu, _apduErr := ApduParse(io, dataLength)
 	if _apduErr != nil {
-		return nil, errors.New("Error parsing 'apdu' field " + _apduErr.Error())
+		return nil, errors.Wrap(_apduErr, "Error parsing 'apdu' field")
 	}
 
 	// Create a partially initialized instance
@@ -202,57 +209,59 @@ func LDataExtendedParse(io *utils.ReadBuffer) (*LDataFrame, error) {
 
 func (m *LDataExtended) Serialize(io utils.WriteBuffer) error {
 	ser := func() error {
+		io.PushContext("LDataExtended")
 
 		// Simple Field (groupAddress)
 		groupAddress := bool(m.GroupAddress)
-		_groupAddressErr := io.WriteBit((groupAddress))
+		_groupAddressErr := io.WriteBit("groupAddress", (groupAddress))
 		if _groupAddressErr != nil {
-			return errors.New("Error serializing 'groupAddress' field " + _groupAddressErr.Error())
+			return errors.Wrap(_groupAddressErr, "Error serializing 'groupAddress' field")
 		}
 
 		// Simple Field (hopCount)
 		hopCount := uint8(m.HopCount)
-		_hopCountErr := io.WriteUint8(3, (hopCount))
+		_hopCountErr := io.WriteUint8("hopCount", 3, (hopCount))
 		if _hopCountErr != nil {
-			return errors.New("Error serializing 'hopCount' field " + _hopCountErr.Error())
+			return errors.Wrap(_hopCountErr, "Error serializing 'hopCount' field")
 		}
 
 		// Simple Field (extendedFrameFormat)
 		extendedFrameFormat := uint8(m.ExtendedFrameFormat)
-		_extendedFrameFormatErr := io.WriteUint8(4, (extendedFrameFormat))
+		_extendedFrameFormatErr := io.WriteUint8("extendedFrameFormat", 4, (extendedFrameFormat))
 		if _extendedFrameFormatErr != nil {
-			return errors.New("Error serializing 'extendedFrameFormat' field " + _extendedFrameFormatErr.Error())
+			return errors.Wrap(_extendedFrameFormatErr, "Error serializing 'extendedFrameFormat' field")
 		}
 
 		// Simple Field (sourceAddress)
 		_sourceAddressErr := m.SourceAddress.Serialize(io)
 		if _sourceAddressErr != nil {
-			return errors.New("Error serializing 'sourceAddress' field " + _sourceAddressErr.Error())
+			return errors.Wrap(_sourceAddressErr, "Error serializing 'sourceAddress' field")
 		}
 
 		// Array Field (destinationAddress)
 		if m.DestinationAddress != nil {
 			for _, _element := range m.DestinationAddress {
-				_elementErr := io.WriteInt8(8, _element)
+				_elementErr := io.WriteInt8("", 8, _element)
 				if _elementErr != nil {
-					return errors.New("Error serializing 'destinationAddress' field " + _elementErr.Error())
+					return errors.Wrap(_elementErr, "Error serializing 'destinationAddress' field")
 				}
 			}
 		}
 
 		// Implicit Field (dataLength) (Used for parsing, but it's value is not stored as it's implicitly given by the objects content)
 		dataLength := uint8(uint8(m.Apdu.LengthInBytes()) - uint8(uint8(1)))
-		_dataLengthErr := io.WriteUint8(8, (dataLength))
+		_dataLengthErr := io.WriteUint8("dataLength", 8, (dataLength))
 		if _dataLengthErr != nil {
-			return errors.New("Error serializing 'dataLength' field " + _dataLengthErr.Error())
+			return errors.Wrap(_dataLengthErr, "Error serializing 'dataLength' field")
 		}
 
 		// Simple Field (apdu)
 		_apduErr := m.Apdu.Serialize(io)
 		if _apduErr != nil {
-			return errors.New("Error serializing 'apdu' field " + _apduErr.Error())
+			return errors.Wrap(_apduErr, "Error serializing 'apdu' field")
 		}
 
+		io.PopContext("LDataExtended")
 		return nil
 	}
 	return m.Parent.SerializeParent(io, m, ser)
@@ -261,10 +270,12 @@ func (m *LDataExtended) Serialize(io utils.WriteBuffer) error {
 func (m *LDataExtended) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
 	var token xml.Token
 	var err error
+	foundContent := false
 	token = start
 	for {
 		switch token.(type) {
 		case xml.StartElement:
+			foundContent = true
 			tok := token.(xml.StartElement)
 			switch tok.Name.Local {
 			case "groupAddress":
@@ -286,11 +297,11 @@ func (m *LDataExtended) UnmarshalXML(d *xml.Decoder, start xml.StartElement) err
 				}
 				m.ExtendedFrameFormat = data
 			case "sourceAddress":
-				var data *KnxAddress
-				if err := d.DecodeElement(data, &tok); err != nil {
+				var data KnxAddress
+				if err := d.DecodeElement(&data, &tok); err != nil {
 					return err
 				}
-				m.SourceAddress = data
+				m.SourceAddress = &data
 			case "destinationAddress":
 				var _encoded string
 				if err := d.DecodeElement(&_encoded, &tok); err != nil {
@@ -305,6 +316,9 @@ func (m *LDataExtended) UnmarshalXML(d *xml.Decoder, start xml.StartElement) err
 			case "apdu":
 				var dt *Apdu
 				if err := d.DecodeElement(&dt, &tok); err != nil {
+					if err == io.EOF {
+						continue
+					}
 					return err
 				}
 				m.Apdu = dt
@@ -312,7 +326,7 @@ func (m *LDataExtended) UnmarshalXML(d *xml.Decoder, start xml.StartElement) err
 		}
 		token, err = d.Token()
 		if err != nil {
-			if err == io.EOF {
+			if err == io.EOF && foundContent {
 				return nil
 			}
 			return err
@@ -342,4 +356,46 @@ func (m *LDataExtended) MarshalXML(e *xml.Encoder, start xml.StartElement) error
 		return err
 	}
 	return nil
+}
+
+func (m LDataExtended) String() string {
+	return string(m.Box("", 120))
+}
+
+func (m LDataExtended) Box(name string, width int) utils.AsciiBox {
+	boxName := "LDataExtended"
+	if name != "" {
+		boxName += "/" + name
+	}
+	childBoxer := func() []utils.AsciiBox {
+		boxes := make([]utils.AsciiBox, 0)
+		// Simple field (case simple)
+		// bool can be boxed as anything with the least amount of space
+		boxes = append(boxes, utils.BoxAnything("GroupAddress", m.GroupAddress, -1))
+		// Simple field (case simple)
+		// uint8 can be boxed as anything with the least amount of space
+		boxes = append(boxes, utils.BoxAnything("HopCount", m.HopCount, -1))
+		// Simple field (case simple)
+		// uint8 can be boxed as anything with the least amount of space
+		boxes = append(boxes, utils.BoxAnything("ExtendedFrameFormat", m.ExtendedFrameFormat, -1))
+		// Complex field (case complex)
+		boxes = append(boxes, m.SourceAddress.Box("sourceAddress", width-2))
+		// Array Field (destinationAddress)
+		if m.DestinationAddress != nil {
+			// Simple array base type int8 will be rendered one by one
+			arrayBoxes := make([]utils.AsciiBox, 0)
+			for _, _element := range m.DestinationAddress {
+				arrayBoxes = append(arrayBoxes, utils.BoxAnything("", _element, width-2))
+			}
+			boxes = append(boxes, utils.BoxBox("DestinationAddress", utils.AlignBoxes(arrayBoxes, width-4), 0))
+		}
+		// Implicit Field (dataLength)
+		dataLength := uint8(uint8(m.Apdu.LengthInBytes()) - uint8(uint8(1)))
+		// uint8 can be boxed as anything with the least amount of space
+		boxes = append(boxes, utils.BoxAnything("DataLength", dataLength, -1))
+		// Complex field (case complex)
+		boxes = append(boxes, m.Apdu.Box("apdu", width-2))
+		return boxes
+	}
+	return m.Parent.BoxParent(boxName, width, childBoxer)
 }

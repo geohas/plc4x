@@ -16,6 +16,7 @@
 // specific language governing permissions and limitations
 // under the License.
 //
+
 package tests
 
 import (
@@ -26,10 +27,5 @@ import (
 )
 
 func TestModbusDriver(t *testing.T) {
-	testutils.RunDriverTestsuite(t, modbus.NewDriver(), "assets/testing/protocols/modbus/DriverTestsuite.xml",
-		// TODO: find out why these test fail. It seems like a timing issue because sometimes the work sometimes not
-		"Single element read request",
-		"Multi element read request",
-		"Array element read request",
-	)
+	testutils.RunDriverTestsuite(t, modbus.NewDriver(), "assets/testing/protocols/modbus/DriverTestsuite.xml")
 }
